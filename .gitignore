@@ -10,3 +10,6 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# Godot editor metadata (not needed on the web)
+*.import
