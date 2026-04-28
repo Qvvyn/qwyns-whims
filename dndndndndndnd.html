@@ -3,32 +3,33 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>dndndndndndnd · on my whimsical shit</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
+<title>d</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" crossorigin="anonymous" />
 <style>
   :root {
     --bg: #0a0612;
     --bg-deep: #060410;
     --ink: #e8d9ff;
     --ink-dim: #9b8bb8;
-    --gold: #e6b54c;
-    --violet: #7c3aed;
-    --magenta: #c026d3;
-    --cyan: #22d3ee;
+    --purple: #a855f7;
     --grain: 0.04;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   html, body {
+    height: 100%;
     background: var(--bg);
     color: var(--ink);
-    font-family: 'Cormorant Garamond', serif;
-    font-weight: 300;
-    overflow-x: hidden;
-    min-height: 100vh;
+    font-family: 'JetBrains Mono', monospace;
+    overflow: hidden;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
   }
 
   body::before {
@@ -38,7 +39,7 @@
     background:
       radial-gradient(ellipse at 20% 30%, rgba(124, 58, 237, 0.25), transparent 50%),
       radial-gradient(ellipse at 80% 70%, rgba(192, 38, 211, 0.18), transparent 50%),
-      radial-gradient(ellipse at 50% 100%, rgba(34, 211, 238, 0.12), transparent 60%),
+      radial-gradient(ellipse at 50% 100%, rgba(168, 85, 247, 0.12), transparent 60%),
       var(--bg-deep);
     z-index: -2;
   }
@@ -55,10 +56,8 @@
   }
 
   .top-nav {
-    position: relative;
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 1.5rem 2rem 0;
+    flex: 0 0 auto;
+    padding: 1rem 1.5rem;
     display: flex;
     gap: 1.5rem;
     justify-content: space-between;
@@ -85,76 +84,23 @@
 
   .top-nav a:hover,
   .top-nav a.active {
-    color: var(--gold);
-    border-bottom-color: var(--gold);
-    text-shadow: 0 0 12px rgba(230, 181, 76, 0.6);
+    color: var(--purple);
+    border-bottom-color: var(--purple);
+    text-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
   }
 
   main {
-    position: relative;
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 4rem 2rem 8rem;
-    z-index: 1;
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .eyebrow {
+  .lone-d {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    color: var(--gold);
-    margin-bottom: 2rem;
-  }
-
-  h1 {
-    font-family: 'Cormorant Garamond', serif;
-    font-weight: 300;
-    font-size: clamp(3rem, 10vw, 7rem);
-    line-height: 0.95;
-    letter-spacing: -0.03em;
-    margin-bottom: 2rem;
-    font-style: italic;
-    background: linear-gradient(135deg, var(--gold), var(--magenta), var(--cyan));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-size: 200% 200%;
-    animation: shimmer 8s ease-in-out infinite;
-  }
-
-  @keyframes shimmer {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-  }
-
-  .lede {
-    font-size: clamp(1.1rem, 2vw, 1.4rem);
-    max-width: 640px;
-    color: var(--ink-dim);
-    line-height: 1.6;
-    font-style: italic;
-    margin-bottom: 3rem;
-  }
-
-  .prose {
-    font-size: 1.2rem;
-    line-height: 1.7;
-    max-width: 640px;
-    color: var(--ink);
-  }
-
-  .prose p + p { margin-top: 1.2rem; }
-
-  footer {
-    margin-top: 8rem;
-    padding-top: 2rem;
-    border-top: 1px solid rgba(230, 181, 76, 0.15);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    color: var(--ink-dim);
-    text-align: center;
-    letter-spacing: 0.1em;
+    font-size: 1rem;
+    color: var(--purple);
+    text-shadow: 0 0 16px rgba(168, 85, 247, 0.5);
   }
 </style>
 </head>
@@ -169,19 +115,7 @@
 </nav>
 
 <main>
-  <div class="eyebrow">campaign log · dice & dragons</div>
-  <h1>dndndndndndnd</h1>
-  <p class="lede">
-    A page for tabletop things — sessions, characters, half-baked homebrew, and whatever else needs a d20 to resolve.
-  </p>
-  <div class="prose">
-    <p>This page is empty for now. Soon: campaign notes, NPC sketches, the running list of cursed items my party refuses to part with.</p>
-    <p>Replace this text with your own.</p>
-  </div>
-
-  <footer>
-    ✦ on my whimsical shit ✦
-  </footer>
+  <span class="lone-d">d</span>
 </main>
 
 </body>

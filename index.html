@@ -6,7 +6,7 @@
 <title>on my whimsical shit</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <style>
   :root {
     --bg: #0a0612;
@@ -15,8 +15,9 @@
     --ink-dim: #9b8bb8;
     --gold: #e6b54c;
     --violet: #7c3aed;
+    --purple: #a855f7;
+    --purple-light: #d8b4fe;
     --magenta: #c026d3;
-    --cyan: #22d3ee;
     --grain: 0.04;
   }
 
@@ -25,10 +26,10 @@
   html, body {
     background: var(--bg);
     color: var(--ink);
-    font-family: 'Cormorant Garamond', serif;
+    font-family: 'JetBrains Mono', monospace;
     font-weight: 300;
     overflow-x: hidden;
-    cursor: none;
+    min-height: 100vh;
   }
 
   /* Animated cosmic background */
@@ -39,7 +40,7 @@
     background:
       radial-gradient(ellipse at 20% 30%, rgba(124, 58, 237, 0.25), transparent 50%),
       radial-gradient(ellipse at 80% 70%, rgba(192, 38, 211, 0.18), transparent 50%),
-      radial-gradient(ellipse at 50% 100%, rgba(34, 211, 238, 0.12), transparent 60%),
+      radial-gradient(ellipse at 50% 100%, rgba(168, 85, 247, 0.12), transparent 60%),
       var(--bg-deep);
     z-index: -2;
     animation: nebula-drift 30s ease-in-out infinite;
@@ -82,38 +83,6 @@
   @keyframes twinkle {
     0%, 100% { opacity: 0.2; transform: scale(1); }
     50% { opacity: 1; transform: scale(1.5); box-shadow: 0 0 6px white; }
-  }
-
-  /* Custom cursor: the wizard */
-  .wizard-cursor {
-    position: fixed;
-    pointer-events: none;
-    z-index: 9999;
-    width: 60px;
-    height: 80px;
-    transform: translate(-50%, -70%);
-    transition: transform 0.08s ease-out;
-    will-change: transform;
-  }
-
-  .wizard-cursor svg {
-    width: 100%;
-    height: 100%;
-    filter: drop-shadow(0 0 8px rgba(230, 181, 76, 0.5));
-  }
-
-  /* Wand tip glow */
-  .wand-glow {
-    position: fixed;
-    pointer-events: none;
-    z-index: 9998;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: radial-gradient(circle, var(--gold), transparent 70%);
-    transform: translate(-50%, -50%);
-    transition: transform 0.05s ease-out;
-    mix-blend-mode: screen;
   }
 
   /* Sparkles */
@@ -160,16 +129,6 @@
     }
   }
 
-  .rune-ring {
-    width: 100%;
-    height: 100%;
-    border: 2px solid var(--gold);
-    border-radius: 50%;
-    box-shadow:
-      0 0 20px var(--gold),
-      inset 0 0 20px var(--violet);
-  }
-
   /* LAYOUT */
   main {
     position: relative;
@@ -209,9 +168,9 @@
   }
 
   .top-nav a:hover {
-    color: var(--gold);
-    border-bottom-color: var(--gold);
-    text-shadow: 0 0 12px rgba(230, 181, 76, 0.6);
+    color: var(--purple);
+    border-bottom-color: var(--purple);
+    text-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
   }
 
   /* Hero */
@@ -228,234 +187,15 @@
     font-size: 0.75rem;
     letter-spacing: 0.3em;
     text-transform: uppercase;
-    color: var(--gold);
-    margin-bottom: 2rem;
+    color: var(--purple);
+    text-shadow: 0 0 16px rgba(168, 85, 247, 0.5);
     opacity: 0;
     animation: fade-up 1s 0.2s ease-out forwards;
-  }
-
-  h1 {
-    font-family: 'Cormorant Garamond', serif;
-    font-weight: 300;
-    font-size: clamp(3.5rem, 12vw, 9rem);
-    line-height: 0.95;
-    letter-spacing: -0.03em;
-    margin-bottom: 2rem;
-    opacity: 0;
-    animation: fade-up 1.2s 0.4s ease-out forwards;
-  }
-
-  h1 .italic {
-    font-style: italic;
-    background: linear-gradient(135deg, var(--gold), var(--magenta), var(--cyan));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-size: 200% 200%;
-    animation: shimmer 8s ease-in-out infinite;
-  }
-
-  @keyframes shimmer {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
   }
 
   @keyframes fade-up {
     from { opacity: 0; transform: translateY(30px); }
     to { opacity: 1; transform: translateY(0); }
-  }
-
-  .lede {
-    font-size: clamp(1.1rem, 2vw, 1.4rem);
-    max-width: 540px;
-    color: var(--ink-dim);
-    line-height: 1.6;
-    font-style: italic;
-    opacity: 0;
-    animation: fade-up 1.2s 0.6s ease-out forwards;
-  }
-
-  /* Floating wizard decoration */
-  .floating-wizard {
-    position: absolute;
-    top: 10%;
-    right: -2rem;
-    width: 200px;
-    opacity: 0.6;
-    animation: float 6s ease-in-out infinite;
-  }
-
-  @keyframes float {
-    0%, 100% { transform: translateY(0) rotate(-3deg); }
-    50% { transform: translateY(-20px) rotate(3deg); }
-  }
-
-  /* Sections */
-  section {
-    margin-top: 8rem;
-    position: relative;
-  }
-
-  .section-label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.4em;
-    text-transform: uppercase;
-    color: var(--gold);
-    margin-bottom: 1.5rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .section-label::before {
-    content: '✦';
-    font-size: 1rem;
-  }
-
-  .section-label::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: linear-gradient(to right, var(--gold), transparent);
-  }
-
-  h2 {
-    font-family: 'Cormorant Garamond', serif;
-    font-weight: 400;
-    font-style: italic;
-    font-size: clamp(2.5rem, 6vw, 4.5rem);
-    line-height: 1;
-    margin-bottom: 2rem;
-    letter-spacing: -0.02em;
-  }
-
-  .prose {
-    font-size: 1.25rem;
-    line-height: 1.7;
-    max-width: 640px;
-    color: var(--ink);
-  }
-
-  .prose p + p { margin-top: 1.2rem; }
-
-  /* Grimoire / Projects */
-  .grimoire {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1.5rem;
-    margin-top: 3rem;
-  }
-
-  .spell-card {
-    position: relative;
-    padding: 2rem 1.75rem;
-    border: 1px solid rgba(230, 181, 76, 0.2);
-    background: rgba(20, 12, 35, 0.4);
-    backdrop-filter: blur(10px);
-    transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-    overflow: hidden;
-  }
-
-  .spell-card::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, transparent, rgba(124, 58, 237, 0.1));
-    opacity: 0;
-    transition: opacity 0.4s;
-  }
-
-  .spell-card:hover {
-    border-color: var(--gold);
-    transform: translateY(-4px);
-    box-shadow: 0 20px 40px -20px rgba(230, 181, 76, 0.4);
-  }
-
-  .spell-card:hover::before { opacity: 1; }
-
-  .spell-icon {
-    font-size: 2rem;
-    margin-bottom: 1rem;
-    display: inline-block;
-    animation: gentle-spin 8s linear infinite;
-  }
-
-  @keyframes gentle-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-
-  .spell-card h3 {
-    font-family: 'Cormorant Garamond', serif;
-    font-weight: 500;
-    font-size: 1.5rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .spell-card p {
-    color: var(--ink-dim);
-    font-size: 0.95rem;
-    line-height: 1.5;
-  }
-
-  /* Contact */
-  .contact-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    margin-top: 2rem;
-  }
-
-  .contact-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.85rem 1.5rem;
-    border: 1px solid rgba(230, 181, 76, 0.3);
-    color: var(--ink);
-    text-decoration: none;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.85rem;
-    letter-spacing: 0.05em;
-    transition: all 0.3s;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .contact-link::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(90deg, var(--violet), var(--magenta));
-    opacity: 0;
-    transition: opacity 0.3s;
-    z-index: -1;
-  }
-
-  .contact-link:hover {
-    border-color: var(--gold);
-    transform: translateX(4px);
-  }
-
-  .contact-link:hover::before { opacity: 0.3; }
-
-  /* Footer */
-  footer {
-    margin-top: 8rem;
-    padding-top: 2rem;
-    border-top: 1px solid rgba(230, 181, 76, 0.15);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    color: var(--ink-dim);
-    text-align: center;
-    letter-spacing: 0.1em;
-  }
-
-  /* Hide cursor on touch devices */
-  @media (hover: none) {
-    html, body { cursor: auto; }
-    .wizard-cursor, .wand-glow { display: none; }
   }
 
   /* Reduce motion */
@@ -472,92 +212,15 @@
 <!-- Stars -->
 <div id="stars"></div>
 
-<!-- Wizard cursor -->
-<div class="wizard-cursor" id="wizard">
-  <svg viewBox="0 0 60 80" xmlns="http://www.w3.org/2000/svg">
-    <!-- Hat -->
-    <path d="M 30 5 Q 28 25, 18 38 L 42 38 Q 32 25, 30 5 Z" fill="#1a0f2e" stroke="#e6b54c" stroke-width="0.8"/>
-    <!-- Hat star -->
-    <text x="26" y="28" font-size="6" fill="#e6b54c">✦</text>
-    <!-- Face -->
-    <circle cx="30" cy="44" r="7" fill="#f4d4a8"/>
-    <!-- Beard -->
-    <path d="M 23 46 Q 20 58, 24 64 Q 30 68, 36 64 Q 40 58, 37 46 Q 30 50, 23 46 Z" fill="#e8e8e8" stroke="#c0c0c0" stroke-width="0.3"/>
-    <!-- Eyes -->
-    <circle cx="27" cy="43" r="0.8" fill="#0a0612"/>
-    <circle cx="33" cy="43" r="0.8" fill="#0a0612"/>
-    <!-- Robe -->
-    <path d="M 22 50 L 15 75 L 45 75 L 38 50 Z" fill="#4c1d95" stroke="#e6b54c" stroke-width="0.5"/>
-    <!-- Wand -->
-    <line x1="42" y1="48" x2="55" y2="35" stroke="#8b4513" stroke-width="1.5" stroke-linecap="round"/>
-    <circle cx="55" cy="35" r="2" fill="#e6b54c">
-      <animate attributeName="r" values="2;3;2" dur="1s" repeatCount="indefinite"/>
-    </circle>
-  </svg>
-</div>
-<div class="wand-glow" id="wandGlow"></div>
-
 <nav class="top-nav">
   <a href="dndndndndndnd.html">dndndndndndnd</a>
   <a href="wizardwalk.html">wizardwalk</a>
 </nav>
 
 <main>
-
   <section class="hero">
     <div class="eyebrow">a dwelling of one (1) wizard</div>
-    <h1>on my<br/><span class="italic">whimsical</span> shit</h1>
-    <p class="lede">
-      A small corner of the internet for half-formed thoughts, peculiar projects, and the occasional incantation. Wave the cursor around. Click things. Make a mess.
-    </p>
   </section>
-
-  <section>
-    <div class="section-label">about the wizard</div>
-    <h2>who, why, what</h2>
-    <div class="prose">
-      <p>This is where you'd write a few sentences about yourself — what you do, what you're curious about, what brought you here.</p>
-      <p>Replace this text with your own. Keep it short and weird. The internet is overstocked on professional bios and understocked on people writing like themselves.</p>
-    </div>
-  </section>
-
-  <section>
-    <div class="section-label">grimoire</div>
-    <h2>things i've made</h2>
-    <div class="grimoire">
-      <a class="spell-card" href="#" style="text-decoration:none; color:inherit;">
-        <span class="spell-icon">✦</span>
-        <h3>Project the First</h3>
-        <p>A short, evocative description. What is it, why does it exist, who's it for.</p>
-      </a>
-      <a class="spell-card" href="#" style="text-decoration:none; color:inherit;">
-        <span class="spell-icon">☾</span>
-        <h3>Project the Second</h3>
-        <p>Tell people why this one mattered to you. Link to it if it's online.</p>
-      </a>
-      <a class="spell-card" href="#" style="text-decoration:none; color:inherit;">
-        <span class="spell-icon">⚝</span>
-        <h3>Project the Third</h3>
-        <p>Three is a magic number. Add or remove cards by editing the HTML.</p>
-      </a>
-    </div>
-  </section>
-
-  <section>
-    <div class="section-label">summon me</div>
-    <h2>say hello</h2>
-    <div class="contact-grid">
-      <a class="contact-link" href="mailto:you@onmywhimsicalshit.com">→ email</a>
-      <a class="contact-link" href="#">→ twitter</a>
-      <a class="contact-link" href="#">→ github</a>
-      <a class="contact-link" href="#">→ wherever</a>
-    </div>
-  </section>
-
-  <footer>
-    ✦ conjured in 2026 ✦ on my whimsical shit ✦
-  </footer>
-
 </main>
 
 <script>
@@ -573,40 +236,9 @@
     starsContainer.appendChild(star);
   }
 
-  // Wizard cursor follow
-  const wizard = document.getElementById('wizard');
-  const wandGlow = document.getElementById('wandGlow');
-  let mouseX = window.innerWidth / 2;
-  let mouseY = window.innerHeight / 2;
-  let wizardX = mouseX;
-  let wizardY = mouseY;
+  // Purple-leaning sparkle palette
+  const sparkleColors = ['#7c3aed', '#a855f7', '#c026d3', '#9333ea', '#d8b4fe', '#ffffff'];
 
-  document.addEventListener('mousemove', (e) => {
-    mouseX = e.clientX;
-    mouseY = e.clientY;
-
-    // Wand glow follows tightly to wand tip
-    const wandTipX = mouseX + 25;
-    const wandTipY = mouseY - 35;
-    wandGlow.style.transform = `translate(${wandTipX}px, ${wandTipY}px) translate(-50%, -50%)`;
-
-    // Drop a sparkle from the wand tip occasionally
-    if (Math.random() < 0.3) {
-      spawnSparkle(wandTipX, wandTipY);
-    }
-  });
-
-  // Lazy follow for the wizard (lags behind cursor)
-  function animateWizard() {
-    wizardX += (mouseX - wizardX) * 0.12;
-    wizardY += (mouseY - wizardY) * 0.12;
-    wizard.style.transform = `translate(${wizardX}px, ${wizardY}px) translate(-50%, -70%)`;
-    requestAnimationFrame(animateWizard);
-  }
-  animateWizard();
-
-  // Sparkles
-  const sparkleColors = ['#e6b54c', '#c026d3', '#22d3ee', '#7c3aed', '#ffffff'];
   function spawnSparkle(x, y) {
     const sparkle = document.createElement('div');
     sparkle.className = 'sparkle';
@@ -626,23 +258,23 @@
   });
 
   function castSpell(x, y) {
-    // Big rune burst
+    // Big rune burst (purple)
     const burst = document.createElement('div');
     burst.className = 'spell-burst';
     burst.style.left = x + 'px';
     burst.style.top = y + 'px';
     burst.innerHTML = `
       <svg viewBox="0 0 100 100" style="width:100%;height:100%;">
-        <circle cx="50" cy="50" r="45" fill="none" stroke="#e6b54c" stroke-width="1.5"
-          stroke-dasharray="4 4" opacity="0.9"/>
-        <circle cx="50" cy="50" r="35" fill="none" stroke="#c026d3" stroke-width="1"
+        <circle cx="50" cy="50" r="45" fill="none" stroke="#a855f7" stroke-width="1.5"
+          stroke-dasharray="4 4" opacity="0.95"/>
+        <circle cx="50" cy="50" r="35" fill="none" stroke="#7c3aed" stroke-width="1"
           stroke-dasharray="2 6"/>
         <polygon points="50,10 60,40 90,50 60,60 50,90 40,60 10,50 40,40"
-          fill="none" stroke="#22d3ee" stroke-width="1" opacity="0.8"/>
-        <text x="20" y="20" font-size="8" fill="#e6b54c">✦</text>
-        <text x="75" y="20" font-size="8" fill="#e6b54c">☾</text>
-        <text x="20" y="85" font-size="8" fill="#e6b54c">⚝</text>
-        <text x="75" y="85" font-size="8" fill="#e6b54c">✧</text>
+          fill="none" stroke="#9333ea" stroke-width="1" opacity="0.85"/>
+        <text x="20" y="20" font-size="8" fill="#d8b4fe">✦</text>
+        <text x="75" y="20" font-size="8" fill="#d8b4fe">☾</text>
+        <text x="20" y="85" font-size="8" fill="#d8b4fe">⚝</text>
+        <text x="75" y="85" font-size="8" fill="#d8b4fe">✧</text>
       </svg>
     `;
     document.body.appendChild(burst);
