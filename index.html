@@ -179,6 +179,41 @@
     z-index: 1;
   }
 
+  /* Top nav */
+  .top-nav {
+    position: relative;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1.5rem 2rem 0;
+    display: flex;
+    gap: 1.5rem;
+    justify-content: flex-end;
+    z-index: 100;
+    pointer-events: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.15em;
+    text-transform: lowercase;
+  }
+
+  .top-nav a {
+    color: var(--ink-dim);
+    text-decoration: none;
+    padding: 0.4rem 0.2rem;
+    border-bottom: 1px solid transparent;
+    transition: color 0.3s, border-color 0.3s, text-shadow 0.3s;
+    pointer-events: auto;
+    position: relative;
+    z-index: 1;
+    cursor: pointer;
+  }
+
+  .top-nav a:hover {
+    color: var(--gold);
+    border-bottom-color: var(--gold);
+    text-shadow: 0 0 12px rgba(230, 181, 76, 0.6);
+  }
+
   /* Hero */
   .hero {
     min-height: 90vh;
@@ -461,6 +496,11 @@
   </svg>
 </div>
 <div class="wand-glow" id="wandGlow"></div>
+
+<nav class="top-nav">
+  <a href="dndndndndndnd.html">dndndndndndnd</a>
+  <a href="wizardwalk.html">wizardwalk</a>
+</nav>
 
 <main>
 
