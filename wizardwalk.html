@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="wizardwalk" />
 <title>wizardwalk · on my whimsical shit</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -148,9 +152,16 @@
   }
 
   /* Pseudo-fullscreen for iOS Safari (which can't real-fullscreen non-video elements) */
+  /* Body taller than viewport + programmatic scroll = iOS hides the URL bar */
+  html.pseudo-fs, body.pseudo-fs {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 110vh;
+  }
   body.pseudo-fs .top-nav { display: none; }
   body.pseudo-fs main {
     padding: 0;
+    min-height: 110vh;
   }
   body.pseudo-fs .game-frame {
     position: fixed;
@@ -232,22 +243,36 @@
     fsBtn.textContent = active ? '← exit fullscreen' : '→ fullscreen';
   }
 
+  function enterPseudoFs() {
+    document.documentElement.classList.add('pseudo-fs');
+    document.body.classList.add('pseudo-fs');
+    setBtnLabel();
+    // Nudge iOS Safari to retract its URL bar. Body is intentionally taller
+    // than the viewport in pseudo-fs mode so this scroll has somewhere to go.
+    setTimeout(() => window.scrollTo(0, 1), 50);
+  }
+
+  function exitPseudoFs() {
+    document.documentElement.classList.remove('pseudo-fs');
+    document.body.classList.remove('pseudo-fs');
+    window.scrollTo(0, 0);
+    setBtnLabel();
+  }
+
   fsBtn.addEventListener('click', async () => {
     if (getFullscreenElement()) {
       exitFullscreen();
       return;
     }
     if (isPseudoFs()) {
-      document.body.classList.remove('pseudo-fs');
-      setBtnLabel();
+      exitPseudoFs();
       return;
     }
     try {
       await requestFullscreen(gameFrame);
     } catch (e) {
       // iOS Safari etc — fall back to CSS pseudo-fullscreen
-      document.body.classList.add('pseudo-fs');
-      setBtnLabel();
+      enterPseudoFs();
     }
   });
 
