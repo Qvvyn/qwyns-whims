@@ -55,40 +55,6 @@
     mix-blend-mode: overlay;
   }
 
-  .top-nav {
-    flex: 0 0 auto;
-    padding: 1rem 1.5rem;
-    display: flex;
-    gap: 1.5rem;
-    justify-content: space-between;
-    align-items: center;
-    z-index: 2;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.8rem;
-    letter-spacing: 0.15em;
-    text-transform: lowercase;
-  }
-
-  .top-nav .nav-right {
-    display: flex;
-    gap: 1.5rem;
-  }
-
-  .top-nav a {
-    color: var(--ink-dim);
-    text-decoration: none;
-    padding: 0.4rem 0.2rem;
-    border-bottom: 1px solid transparent;
-    transition: color 0.3s, border-color 0.3s, text-shadow 0.3s;
-  }
-
-  .top-nav a:hover,
-  .top-nav a.active {
-    color: var(--purple);
-    border-bottom-color: var(--purple);
-    text-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
-  }
-
   main {
     flex: 1 1 auto;
     display: flex;
@@ -105,14 +71,6 @@
 </style>
 </head>
 <body>
-
-<nav class="top-nav">
-  <a href="index.html">← home</a>
-  <div class="nav-right">
-    <a href="dndndndndndnd.html" class="active">dndndndndndnd</a>
-    <a href="wizardwalk.html">wizardwalk</a>
-  </div>
-</nav>
 
 <main>
   <span class="lone-d">d</span>
