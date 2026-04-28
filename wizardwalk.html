@@ -6,7 +6,7 @@
 <title>wizardwalk · on my whimsical shit</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" crossorigin="anonymous" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" crossorigin="anonymous" />
 <style>
   :root {
     --bg: #0a0612;
@@ -23,12 +23,15 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   html, body {
+    height: 100%;
     background: var(--bg);
     color: var(--ink);
-    font-family: 'Cormorant Garamond', serif;
-    font-weight: 300;
-    overflow-x: hidden;
-    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
   }
 
   body::before {
@@ -55,10 +58,8 @@
   }
 
   .top-nav {
-    position: relative;
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 1.5rem 2rem 0;
+    flex: 0 0 auto;
+    padding: 1rem 1.5rem;
     display: flex;
     gap: 1.5rem;
     justify-content: space-between;
@@ -91,76 +92,22 @@
   }
 
   main {
-    position: relative;
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 4rem 2rem 8rem;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    padding: 0 1rem 1rem;
+    min-height: 0;
     z-index: 1;
   }
 
-  .eyebrow {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    color: var(--gold);
-    margin-bottom: 2rem;
-  }
-
-  h1 {
-    font-family: 'Cormorant Garamond', serif;
-    font-weight: 300;
-    font-size: clamp(3rem, 10vw, 7rem);
-    line-height: 0.95;
-    letter-spacing: -0.03em;
-    margin-bottom: 2rem;
-    font-style: italic;
-    background: linear-gradient(135deg, var(--gold), var(--magenta), var(--cyan));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-size: 200% 200%;
-    animation: shimmer 8s ease-in-out infinite;
-  }
-
-  @keyframes shimmer {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-  }
-
-  .lede {
-    font-size: clamp(1.1rem, 2vw, 1.4rem);
-    max-width: 640px;
-    color: var(--ink-dim);
-    line-height: 1.6;
-    font-style: italic;
-    margin-bottom: 3rem;
-  }
-
-  .prose {
-    font-size: 1.2rem;
-    line-height: 1.7;
-    max-width: 640px;
-    color: var(--ink);
-  }
-
-  .prose p + p { margin-top: 1.2rem; }
-
-  /* Game embed */
-  .game-wrap {
-    margin-top: 2rem;
-    width: 100%;
-    max-width: 1280px;
-  }
-
   .game-frame {
+    flex: 1 1 auto;
     position: relative;
-    width: 100%;
-    aspect-ratio: 16 / 9;
     border: 1px solid rgba(230, 181, 76, 0.3);
     background: var(--bg-deep);
     box-shadow: 0 20px 60px -20px rgba(124, 58, 237, 0.5);
     overflow: hidden;
+    min-height: 0;
   }
 
   .game-frame iframe {
@@ -171,12 +118,10 @@
   }
 
   .game-controls {
-    margin-top: 0.75rem;
+    flex: 0 0 auto;
+    margin-top: 0.5rem;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
+    justify-content: flex-end;
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.75rem;
     letter-spacing: 0.1em;
@@ -187,7 +132,7 @@
     background: transparent;
     border: 1px solid rgba(230, 181, 76, 0.3);
     color: var(--ink);
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 0.9rem;
     font-family: inherit;
     font-size: inherit;
     letter-spacing: inherit;
@@ -200,17 +145,6 @@
     border-color: var(--gold);
     color: var(--gold);
     text-shadow: 0 0 12px rgba(230, 181, 76, 0.6);
-  }
-
-  footer {
-    margin-top: 8rem;
-    padding-top: 2rem;
-    border-top: 1px solid rgba(230, 181, 76, 0.15);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    color: var(--ink-dim);
-    text-align: center;
-    letter-spacing: 0.1em;
   }
 </style>
 </head>
@@ -225,30 +159,17 @@
 </nav>
 
 <main>
-  <div class="eyebrow">a slow stroll · staff in hand</div>
-  <h1>wizardwalk</h1>
-  <p class="lede">
-    A small dungeon to wander. Click the canvas to begin, then play in your browser.
-  </p>
-
-  <div class="game-wrap">
-    <div class="game-frame" id="gameFrame">
-      <iframe
-        id="gameIframe"
-        src="walk/DungeonCrawler.html"
-        title="wizardwalk · dungeon crawler"
-        allow="cross-origin-isolated; autoplay; fullscreen; gamepad"
-        allowfullscreen></iframe>
-    </div>
-    <div class="game-controls">
-      <span>↑ ↓ ← → · click to focus</span>
-      <button class="fullscreen-btn" id="fsBtn" type="button">→ fullscreen</button>
-    </div>
+  <div class="game-frame" id="gameFrame">
+    <iframe
+      id="gameIframe"
+      src="walk/DungeonCrawler.html"
+      title="wizardwalk · dungeon crawler"
+      allow="cross-origin-isolated; autoplay; fullscreen; gamepad"
+      allowfullscreen></iframe>
   </div>
-
-  <footer>
-    ✦ on my whimsical shit ✦
-  </footer>
+  <div class="game-controls">
+    <button class="fullscreen-btn" id="fsBtn" type="button">→ fullscreen</button>
+  </div>
 </main>
 
 <script>
