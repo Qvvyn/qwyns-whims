@@ -1,0 +1,10 @@
+# Make sure .wasm files are served with the right MIME type
+AddType application/wasm .wasm
+
+<IfModule mod_headers.c>
+  # Cross-origin isolation for the game host page (required for Godot's SharedArrayBuffer)
+  <FilesMatch "^wizardwalk\.html$">
+    Header set Cross-Origin-Opener-Policy "same-origin"
+    Header set Cross-Origin-Embedder-Policy "require-corp"
+  </FilesMatch>
+</IfModule>
