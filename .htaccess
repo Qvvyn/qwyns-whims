@@ -1,6 +1,11 @@
 # Make sure .wasm files are served with the right MIME type
 AddType application/wasm .wasm
 
+<IfModule mod_setenvif.c>
+  # Tag any request under /walk/ so we can apply headers below.
+  SetEnvIf Request_URI "^/walk/" IS_GAME_ASSET=1
+</IfModule>
+
 <IfModule mod_headers.c>
   # Cross-origin isolation for the game host page (Godot SharedArrayBuffer)
   <FilesMatch "^wizardwalk\.html$">
@@ -10,9 +15,7 @@ AddType application/wasm .wasm
 
   # Cross-origin isolation for everything inside /walk/.
   # Lives here in the root htaccess so Godot re-exports can't blow it away.
-  <If "%{REQUEST_URI} =~ m#^/walk/#">
-    Header set Cross-Origin-Opener-Policy "same-origin"
-    Header set Cross-Origin-Embedder-Policy "require-corp"
-    Header set Cross-Origin-Resource-Policy "same-origin"
-  </If>
+  Header set Cross-Origin-Opener-Policy "same-origin" env=IS_GAME_ASSET
+  Header set Cross-Origin-Embedder-Policy "require-corp" env=IS_GAME_ASSET
+  Header set Cross-Origin-Resource-Policy "same-origin" env=IS_GAME_ASSET
 </IfModule>
