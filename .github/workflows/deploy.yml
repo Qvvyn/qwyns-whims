@@ -16,7 +16,7 @@ jobs:
       - name: Deploy via FTPS
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ftp.onmywhimsicalshit.com
+          server: premium225.web-hosting.com
           port: 21
           protocol: ftps
           username: ${{ secrets.FTP_USERNAME }}
