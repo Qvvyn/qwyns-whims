@@ -980,9 +980,17 @@
   // Format recommendation from headcount (bouts grow quadratically in a pool).
   function suggestFormat(n) {
     if (n < 2) return null;
-    if (n <= 6) return { label: '1 big pool — everyone fences everyone, top 2 to a final', cfg: { format: 'pools', numPools: 1, advanceCount: 2, guaranteePerPool: 0 } };
-    if (n <= 12) return { label: '2 pools — top 2 from each into a 4-fencer final', cfg: { format: 'pools', numPools: 2, advanceCount: 4, guaranteePerPool: 2 } };
-    return { label: 'lives — 3 lives each, last fencer standing', cfg: { format: 'lives', defaultLives: 3 } };
+    // Always recommend pools -> a scaled final bracket (lives alone is already one tap away).
+    // ~5 per pool; top 2 of each feed a top-(2*pools) bracket; a big top-16 goes double-elim.
+    let pools = Math.max(1, Math.min(8, Math.round(n / 5)));
+    pools = Math.min(pools, Math.floor(n / 2));            // need >=2 fencers per pool
+    const bracket = Math.min(n, 2 * pools);                // top 2 from each pool
+    const lives = bracket >= 16 ? 2 : 3;                   // large bracket -> double-elim feel
+    const finalDesc = lives === 2 ? 'double-elim (2 lives)' : (bracket <= 2 ? 'lives final' : 'lives bracket');
+    const label = pools === 1
+      ? ('1 pool — round-robin, top ' + bracket + ' to a ' + finalDesc)
+      : (pools + ' pools — top 2 each into a top-' + bracket + ' ' + finalDesc);
+    return { label: label, cfg: { format: 'pools', numPools: pools, advanceCount: bracket, guaranteePerPool: 2, defaultLives: lives } };
   }
   function suggestionHTML() {
     const n = state.fencers.filter(f => (f.name || '').trim().length).length;
