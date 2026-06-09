@@ -271,6 +271,13 @@
     .hp-lost { color: #ccc !important; }
     .rktag { color: #333 !important; border-color: #999 !important; }
     .srow.qual { background: #eee !important; }
+    .poule th, .poule td { border-color: #bbb !important; }
+    .poule .rowh { background: #fff !important; color: #111 !important; }
+    .poule .rW { color: #111 !important; }
+    .poule .rL { color: #777 !important; }
+    .poule .rD { color: #444 !important; }
+    .poule .x { color: #999 !important; background: #f3f3f3 !important; }
+    .poule .pend, .poule .colh, .poule .corner { color: #999 !important; }
   }
 
   .rkchip { min-width: 3.2rem; text-align: center; }
@@ -279,6 +286,18 @@
   .rk-OSR { color: #cdd3da; border-color: rgba(205, 211, 218, 0.5); }
   .rk-OGR { color: var(--gold); border-color: rgba(230, 181, 76, 0.5); }
   .rk-MoD { color: var(--purple-light, #d8b4fe); border-color: var(--purple); }
+
+  .grid-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 0.85rem; }
+  .poule { border-collapse: collapse; font-size: 0.7rem; }
+  .poule th, .poule td { border: 1px solid var(--line); padding: 0.25rem 0.4rem; text-align: center; white-space: nowrap; }
+  .poule .rowh { text-align: left; font-weight: 400; color: var(--ink); position: sticky; left: 0; background: var(--bg-deep); max-width: 9rem; overflow: hidden; text-overflow: ellipsis; }
+  .poule .colh, .poule .corner { color: var(--ink-dim); font-weight: 400; }
+  .poule .cell { min-width: 1.5rem; font-weight: 500; }
+  .poule .x { color: #2a2440; background: rgba(255, 255, 255, 0.015); }
+  .poule .pend { color: var(--ink-dim); }
+  .poule .rW { color: var(--purple); }
+  .poule .rL { color: var(--out); }
+  .poule .rD { color: var(--gold); }
 
   .champ-banner { text-align: center; padding: 1.5rem 1rem; border: 1px solid var(--gold); border-radius: 16px; background: radial-gradient(ellipse at 50% 0%, rgba(230,181,76,0.18), transparent 70%); margin-bottom: 1.25rem; }
   .champ-banner .crown { font-size: 1.6rem; }
@@ -643,16 +662,33 @@
     });
     return pools;
   }
+  function circleRounds(ids) {
+    // round-robin circle method: each fencer plays once per round, so flattening the
+    // rounds spreads every fencer's bouts apart (avoids back-to-back fighting).
+    const arr = ids.slice();
+    if (arr.length % 2 === 1) arr.push(null);   // bye placeholder for odd pools
+    const half = arr.length / 2;
+    let top = arr.slice();
+    const out = [];
+    for (let r = 0; r < arr.length - 1; r++) {
+      for (let i = 0; i < half; i++) {
+        const a = top[i], b = top[arr.length - 1 - i];
+        if (a != null && b != null) out.push([a, b]);
+      }
+      const fixed = top[0], rest = top.slice(1);
+      rest.unshift(rest.pop());
+      top = [fixed].concat(rest);
+    }
+    return out;
+  }
   function generatePools() {
     const ids = seedOrder();
     ids.forEach((id, i) => { const f = fencerById(id); if (f) f.seed = i; });
     const np = Math.max(1, Math.min(state.meta.numPools || 1, Math.floor(ids.length / 2) || 1));
     const groups = snakeAssign(ids, np);
     state.pools = groups.map((gids, gi) => {
-      let n = 1; const bouts = [];
-      for (let i = 0; i < gids.length; i++)
-        for (let j = i + 1; j < gids.length; j++)
-          bouts.push({ id: 'g' + (gi + 1) + 'b' + (n++), a: gids[i], b: gids[j], result: null });
+      let n = 1;
+      const bouts = circleRounds(gids).map(pr => ({ id: 'g' + (gi + 1) + 'b' + (n++), a: pr[0], b: pr[1], result: null }));
       return { index: gi + 1, fencerIds: gids, bouts: bouts };
     });
   }
@@ -701,7 +737,7 @@
   }
   function h2h(g, x, y) {
     const bt = g.bouts.find(b => (b.a === x && b.b === y) || (b.a === y && b.b === x));
-    if (!bt || !bt.result) return 0;
+    if (!bt || !bt.result || bt.result === 'double') return 0;
     const winner = bt.result === 'A' ? bt.a : bt.b;
     return winner === x ? -1 : 1;
   }
@@ -1038,6 +1074,7 @@
       html += '<div class="history">' + state.pools.map(g => {
         const standing = poolStanding(g);
         return '<div class="hround"><div class="hround-t">pool ' + g.index + '</div>'
+          + renderPoolGrid(g)
           + standing.map((id, i) => '<div class="hbout">' + (i + 1) + '. <b>' + esc(nameOf(id)) + '</b> ' + rkTag(id) + ' — ' + poolWins(id) + 'W</div>').join('')
           + '</div>';
       }).join('') + '</div>';
@@ -1062,17 +1099,41 @@
   }
 
   // ---- pools screen ----
+  function cellResult(g, x, y) {
+    const bt = g.bouts.find(b => (b.a === x && b.b === y) || (b.a === y && b.b === x));
+    if (!bt || !bt.result) return '';
+    if (bt.result === 'double') return 'D';
+    const winner = bt.result === 'A' ? bt.a : bt.b;
+    return winner === x ? 'W' : 'L';
+  }
+  function renderPoolGrid(g) {
+    const ids = g.fencerIds;
+    let h = '<div class="grid-scroll"><table class="poule"><tr><th class="corner"></th>';
+    ids.forEach((id, j) => { h += '<th class="colh">' + (j + 1) + '</th>'; });
+    h += '</tr>';
+    ids.forEach((id, i) => {
+      h += '<tr><th class="rowh">' + (i + 1) + '. ' + esc(nameOf(id)) + '</th>';
+      ids.forEach((jd, j) => {
+        if (i === j) { h += '<td class="cell x">✕</td>'; return; }
+        const r = cellResult(g, id, jd);
+        h += '<td class="cell ' + (r ? 'r' + r : 'pend') + '">' + r + '</td>';
+      });
+      h += '</tr>';
+    });
+    return h + '</table></div>';
+  }
   function renderPoolBout(g, bt) {
     const A = esc(nameOf(bt.a)), B = esc(nameOf(bt.b));
     if (bt.result == null) {
       return '<div class="bout"><div class="bout-fencers"><span class="bn">' + A + '</span><span class="vs">vs</span><span class="bn">' + B + '</span></div>'
-        + '<div class="result-btns" style="grid-template-columns:1fr 1fr">'
+        + '<div class="result-btns">'
         + '<button class="btn win" data-action="pool-result" data-i="' + g.index + '" data-bid="' + bt.id + '" data-r="A">' + A + ' won</button>'
+        + '<button class="btn draw" data-action="pool-result" data-i="' + g.index + '" data-bid="' + bt.id + '" data-r="double">draw</button>'
         + '<button class="btn win" data-action="pool-result" data-i="' + g.index + '" data-bid="' + bt.id + '" data-r="B">' + B + ' won</button>'
         + '</div></div>';
     }
-    const res = bt.result === 'A' ? A : B;
-    return '<div class="bout done"><div class="bout-summary"><span class="res">✓ ' + res + ' won</span>'
+    const res = bt.result === 'double' ? ('⚔ draw — ' + A + ' / ' + B) : ('✓ ' + (bt.result === 'A' ? A : B) + ' won');
+    return '<div class="bout done"><div class="bout-summary"><span class="res">' + res + '</span>'
       + '<button class="btn tiny ghost" data-action="pool-undo-result" data-i="' + g.index + '" data-bid="' + bt.id + '">undo</button></div></div>';
   }
   function renderPoolCard(g) {
@@ -1084,6 +1145,7 @@
       + (open ? '▾ pool ' : '▸ pool ') + g.index + ' · ' + g.fencerIds.length + ' fencers</button>'
       + '<span class="srec">' + g.bouts.filter(b => b.result).length + '/' + g.bouts.length + '</span></div>';
     if (open) {
+      s += renderPoolGrid(g);
       s += '<div class="standings">' + standing.map((id, i) =>
         '<div class="srow' + (gpp && i < gpp ? ' qual' : '') + '"><span class="place">' + (i + 1) + '</span>'
         + '<span class="sname">' + esc(nameOf(id)) + ' ' + rkTag(id) + '</span>'
