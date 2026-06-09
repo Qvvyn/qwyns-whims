@@ -737,7 +737,7 @@
   }
   function h2h(g, x, y) {
     const bt = g.bouts.find(b => (b.a === x && b.b === y) || (b.a === y && b.b === x));
-    if (!bt || !bt.result || bt.result === 'double') return 0;
+    if (!bt || (bt.result !== 'A' && bt.result !== 'B')) return 0;
     const winner = bt.result === 'A' ? bt.a : bt.b;
     return winner === x ? -1 : 1;
   }
@@ -1102,7 +1102,8 @@
   function cellResult(g, x, y) {
     const bt = g.bouts.find(b => (b.a === x && b.b === y) || (b.a === y && b.b === x));
     if (!bt || !bt.result) return '';
-    if (bt.result === 'double') return 'D';
+    if (bt.result === 'draw') return 'D';
+    if (bt.result === 'double') return 'L';   // double = both lose
     const winner = bt.result === 'A' ? bt.a : bt.b;
     return winner === x ? 'W' : 'L';
   }
@@ -1125,14 +1126,16 @@
   function renderPoolBout(g, bt) {
     const A = esc(nameOf(bt.a)), B = esc(nameOf(bt.b));
     if (bt.result == null) {
+      const mk = (r, label, cls) => '<button class="btn ' + cls + '" data-action="pool-result" data-i="' + g.index + '" data-bid="' + bt.id + '" data-r="' + r + '">' + label + '</button>';
       return '<div class="bout"><div class="bout-fencers"><span class="bn">' + A + '</span><span class="vs">vs</span><span class="bn">' + B + '</span></div>'
-        + '<div class="result-btns">'
-        + '<button class="btn win" data-action="pool-result" data-i="' + g.index + '" data-bid="' + bt.id + '" data-r="A">' + A + ' won</button>'
-        + '<button class="btn draw" data-action="pool-result" data-i="' + g.index + '" data-bid="' + bt.id + '" data-r="double">draw</button>'
-        + '<button class="btn win" data-action="pool-result" data-i="' + g.index + '" data-bid="' + bt.id + '" data-r="B">' + B + ' won</button>'
-        + '</div></div>';
+        + '<div class="result-btns" style="grid-template-columns:1fr 1fr">' + mk('A', A + ' won', 'win') + mk('B', B + ' won', 'win') + '</div>'
+        + '<div class="result-btns" style="grid-template-columns:1fr 1fr;margin-top:.4rem">' + mk('draw', 'draw', 'draw') + mk('double', 'double · both L', 'draw') + '</div>'
+        + '</div>';
     }
-    const res = bt.result === 'double' ? ('⚔ draw — ' + A + ' / ' + B) : ('✓ ' + (bt.result === 'A' ? A : B) + ' won');
+    let res;
+    if (bt.result === 'draw') res = '⚖ draw — ' + A + ' / ' + B;
+    else if (bt.result === 'double') res = '✗ double — ' + A + ' / ' + B + ' (both lose)';
+    else res = '✓ ' + (bt.result === 'A' ? A : B) + ' won';
     return '<div class="bout done"><div class="bout-summary"><span class="res">' + res + '</span>'
       + '<button class="btn tiny ghost" data-action="pool-undo-result" data-i="' + g.index + '" data-bid="' + bt.id + '">undo</button></div></div>';
   }
