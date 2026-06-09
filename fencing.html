@@ -252,6 +252,13 @@
   .hbout b { color: var(--purple); }
   .hbout .pend { color: var(--ink-dim); }
 
+  .rkchip { min-width: 3.2rem; text-align: center; }
+  .rktag { font-size: 0.58rem; letter-spacing: 0.06em; padding: 0.05rem 0.3rem; border: 1px solid; border-radius: 6px; vertical-align: middle; }
+  .rk-NA { color: var(--ink-dim); border-color: var(--line); }
+  .rk-OSR { color: #cdd3da; border-color: rgba(205, 211, 218, 0.5); }
+  .rk-OGR { color: var(--gold); border-color: rgba(230, 181, 76, 0.5); }
+  .rk-MoD { color: var(--purple-light, #d8b4fe); border-color: var(--purple); }
+
   .champ-banner { text-align: center; padding: 1.5rem 1rem; border: 1px solid var(--gold); border-radius: 16px; background: radial-gradient(ellipse at 50% 0%, rgba(230,181,76,0.18), transparent 70%); margin-bottom: 1.25rem; }
   .champ-banner .crown { font-size: 1.6rem; }
   .champ-banner .who { font-size: 1.3rem; color: var(--gold); margin-top: 0.4rem; text-shadow: 0 0 18px rgba(230,181,76,0.5); }
@@ -297,7 +304,7 @@
   const modalRoot = document.getElementById('modal-root');
 
   // transient UI state (not persisted)
-  const ui = { menuOpen: false, standingsOpen: false, historyOpen: false, fencerEdit: null, editRound: false, draft: null, modal: null };
+  const ui = { menuOpen: false, standingsOpen: false, historyOpen: false, fencerEdit: null, editRound: false, draft: null, modal: null, poolOpen: {} };
 
   // ---- global undo: snapshot the whole state before each mutating action ----
   const undoStack = [];
@@ -317,7 +324,9 @@
     'set-mode', 'add-fencer-setup', 'remove-fencer', 'start', 'deflife-inc', 'deflife-dec',
     'startlife-inc', 'startlife-dec', 'result', 'undo-result', 'undo-last', 'advance', 'finish',
     'curlife-inc', 'curlife-dec', 'eliminate', 'revive', 'add-fencer-live', 'delete-fencer',
-    'draft-save', 'do-reset', 'do-import', 'do-bulk', 'rematch'
+    'draft-save', 'do-reset', 'do-import', 'do-bulk', 'rematch',
+    'set-format', 'numpools-inc', 'numpools-dec', 'advance-inc', 'advance-dec', 'cycle-rank',
+    'pool-result', 'pool-undo-result', 'advance-to-bracket', 'reshuffle-pools'
   ]);
 
   // ---------------- state ----------------
@@ -327,9 +336,11 @@
     return {
       schemaVersion: SCHEMA_VERSION,
       meta: { name: '', mode: 'unweighted', defaultLives: 3, status: 'setup',
+              format: 'lives', phase: null, numPools: 2, advanceCount: 8,
               champion: null, nextFencerId: 1, createdAt: now(), updatedAt: now() },
       fencers: [],
       rounds: [],
+      pools: [],
       history: { opponents: {}, byeCount: {} }
     };
   }
@@ -435,6 +446,11 @@
   function normalizeState(s) {
     s.meta = s.meta || {};
     if (s.meta.defaultLives == null) s.meta.defaultLives = 3;
+    if (!s.meta.format) s.meta.format = 'lives';
+    if (s.meta.phase === undefined) s.meta.phase = null;
+    if (s.meta.numPools == null) s.meta.numPools = 2;
+    if (s.meta.advanceCount == null) s.meta.advanceCount = 8;
+    s.pools = s.pools || [];
     if (s.meta.nextFencerId == null) {
       let mx = 0; s.fencers.forEach(f => { const n = parseInt(String(f.id).slice(1), 10); if (!isNaN(n)) mx = Math.max(mx, n); });
       s.meta.nextFencerId = mx + 1;
@@ -561,11 +577,116 @@
       f.status = 'alive';
       f.eliminationOrder = null;
     });
-    state.meta.status = 'live';
     state.meta.champion = null;
     state.rounds = [];
+    if (state.meta.format === 'pools') {
+      generatePools();
+      state.meta.phase = 'pools';
+    } else {
+      state.meta.phase = null;
+      addRoundFromGen(generatePairings());
+    }
+    state.meta.status = 'live';
+    ui.standingsOpen = false; ui.fencerEdit = null; ui.poolOpen = {};
+    save(); render();
+  }
+
+  // ---------------- pools (round-robin → seeded cut → lives bracket) ----------------
+  const RANK_ORDER = ['N/A', 'OSR', 'OGR', 'MoD'];
+  function rankVal(f) { const i = RANK_ORDER.indexOf(f && f.rank); return i < 0 ? 0 : i; }
+  function rankChip(f) {
+    const rk = f.rank || 'N/A';
+    return '<button class="btn tiny rkchip rk-' + rk.replace('/', '') + '" data-action="cycle-rank" data-id="' + f.id + '" title="tap to change rank">' + rk + '</button>';
+  }
+  function rkTag(id) {
+    const f = fencerById(id); const rk = (f && f.rank) || 'N/A';
+    return '<span class="rktag rk-' + rk.replace('/', '') + '">' + rk + '</span>';
+  }
+  function seedOrder() {
+    const ids = shuffle(state.fencers.map(f => f.id));
+    // weighted pools = snake-seed by rank for a fair spread; unweighted = random
+    if (state.meta.mode === 'weighted') ids.sort((x, y) => rankVal(fencerById(y)) - rankVal(fencerById(x)));
+    return ids;
+  }
+  function snakeAssign(order, numPools) {
+    const pools = []; for (let i = 0; i < numPools; i++) pools.push([]);
+    let p = 0, dir = 1;
+    order.forEach(id => {
+      pools[p].push(id);
+      if (dir === 1) { if (p === numPools - 1) dir = -1; else p++; }
+      else { if (p === 0) dir = 1; else p--; }
+    });
+    return pools;
+  }
+  function generatePools() {
+    const ids = seedOrder();
+    ids.forEach((id, i) => { const f = fencerById(id); if (f) f.seed = i; });
+    const np = Math.max(1, Math.min(state.meta.numPools || 1, Math.floor(ids.length / 2) || 1));
+    const groups = snakeAssign(ids, np);
+    state.pools = groups.map((gids, gi) => {
+      let n = 1; const bouts = [];
+      for (let i = 0; i < gids.length; i++)
+        for (let j = i + 1; j < gids.length; j++)
+          bouts.push({ id: 'g' + (gi + 1) + 'b' + (n++), a: gids[i], b: gids[j], result: null });
+      return { index: gi + 1, fencerIds: gids, bouts: bouts };
+    });
+  }
+  function poolPreview() {
+    const n = state.fencers.filter(f => (f.name || '').trim().length).length;
+    if (n < 2) return 'Add at least 2 fencers to preview pools.';
+    const np = Math.max(1, Math.min(state.meta.numPools || 1, Math.floor(n / 2) || 1));
+    const sizes = []; for (let i = 0; i < np; i++) sizes.push(Math.floor(n / np) + (i < n % np ? 1 : 0));
+    return n + ' fencers → ' + np + ' pool' + (np > 1 ? 's' : '') + ' of ' + sizes.join('/');
+  }
+  function poolWins(id) {
+    let w = 0;
+    state.pools.forEach(g => g.bouts.forEach(bt => {
+      if (bt.result === 'A' && bt.a === id) w++;
+      else if (bt.result === 'B' && bt.b === id) w++;
+    }));
+    return w;
+  }
+  function poolPlayed(id) {
+    let n = 0;
+    state.pools.forEach(g => g.bouts.forEach(bt => { if (bt.result && (bt.a === id || bt.b === id)) n++; }));
+    return n;
+  }
+  function poolBoutsTotal() { return state.pools.reduce((s, g) => s + g.bouts.length, 0); }
+  function poolBoutsDoneCount() { return state.pools.reduce((s, g) => s + g.bouts.filter(b => b.result).length, 0); }
+  function poolsComplete() { return poolBoutsTotal() > 0 && poolBoutsDoneCount() === poolBoutsTotal(); }
+  function overallRanking() {
+    return state.fencers.slice().sort((a, b) => {
+      const ra = poolWins(a.id) / (poolPlayed(a.id) || 1), rb = poolWins(b.id) / (poolPlayed(b.id) || 1);
+      if (rb !== ra) return rb - ra;                       // win ratio (fair across pool sizes)
+      const wd = poolWins(b.id) - poolWins(a.id); if (wd) return wd;
+      return (a.seed || 0) - (b.seed || 0);                // then seed
+    });
+  }
+  function recordPoolResult(poolIndex, boutId, winner) {
+    const g = state.pools.find(x => String(x.index) === String(poolIndex));
+    const bt = g && g.bouts.find(b => b.id === boutId);
+    if (!bt) return;
+    bt.result = winner; save(); render();
+  }
+  function undoPoolResult(poolIndex, boutId) {
+    const g = state.pools.find(x => String(x.index) === String(poolIndex));
+    const bt = g && g.bouts.find(b => b.id === boutId);
+    if (!bt) return;
+    bt.result = null; save(); render();
+  }
+  function advanceToBracket() {
+    if (!poolsComplete()) return;
+    const ranked = overallRanking();
+    const N = Math.max(1, Math.min(state.meta.advanceCount || ranked.length, ranked.length));
+    let order = 0;
+    for (let i = ranked.length - 1; i >= N; i--) {
+      const f = ranked[i]; f.currentLives = 0; f.status = 'out'; f.eliminationOrder = ++order;
+    }
+    ranked.slice(0, N).forEach(f => { f.currentLives = f.startingLives; f.status = 'alive'; f.eliminationOrder = null; });
+    state.meta.phase = 'bracket';
+    state.rounds = [];
     addRoundFromGen(generatePairings());
-    ui.standingsOpen = false; ui.fencerEdit = null;
+    ui.menuOpen = false; ui.standingsOpen = false;
     save(); render();
   }
 
@@ -752,6 +873,7 @@
   function render() {
     if (state.meta.status === 'setup') renderSetup();
     else if (state.meta.status === 'finished') renderFinished();
+    else if (state.meta.format === 'pools' && state.meta.phase === 'pools') renderPools();
     else renderLive();
     renderModal();
   }
@@ -768,10 +890,13 @@
   function renderSetup() {
     const m = state.meta;
     const weighted = m.mode === 'weighted';
+    const showRank = m.format === 'pools';
+    const showLives = weighted && m.format !== 'pools';
     const rows = state.fencers.map(f =>
       '<div class="frow">'
       + '<input class="text-input" data-bind="rename" data-id="' + f.id + '" value="' + esc(f.name) + '" placeholder="name" autocapitalize="words" autocomplete="off">'
-      + (weighted ? stepperHTML('startlife', f.id, clampLives(f.startingLives || m.defaultLives), 1) : '')
+      + (showRank ? rankChip(f) : '')
+      + (showLives ? stepperHTML('startlife', f.id, clampLives(f.startingLives || m.defaultLives), 1) : '')
       + '<button class="x" data-action="remove-fencer" data-id="' + f.id + '" aria-label="remove">×</button>'
       + '</div>'
     ).join('');
@@ -784,17 +909,34 @@
       + '<label class="field"><span>tournament name</span>'
       + '<input class="text-input" data-bind="name" value="' + esc(m.name) + '" placeholder="Thursday practice" autocapitalize="words" autocomplete="off"></label>'
 
+      + '<div class="field"><span>format</span>'
+      + '<div class="segmented">'
+      + '<button data-action="set-format" data-format="lives" class="' + (m.format !== 'pools' ? 'on' : '') + '">lives only</button>'
+      + '<button data-action="set-format" data-format="pools" class="' + (m.format === 'pools' ? 'on' : '') + '">pools → bracket</button>'
+      + '</div>'
+      + '<p class="hint">' + (m.format === 'pools'
+          ? 'Round-robin pools, then the top fencers (overall) advance into the lives bracket.'
+          : 'Straight lives bracket — last fencer standing wins.') + '</p></div>'
+
       + '<div class="field"><span>mode</span>'
       + '<div class="segmented">'
       + '<button data-action="set-mode" data-mode="unweighted" class="' + (!weighted ? 'on' : '') + '">unweighted</button>'
       + '<button data-action="set-mode" data-mode="weighted" class="' + (weighted ? 'on' : '') + '">weighted</button>'
       + '</div>'
-      + '<p class="hint">' + (weighted
-          ? 'Each fencer starts with the lives you set — more lives = more chances to prove yourself.'
-          : 'Everyone starts with the same number of lives.') + '</p></div>'
+      + '<p class="hint">' + (m.format === 'pools'
+          ? (weighted ? 'Pools are seeded by rank so each pool gets a fair spread of strong and weak fencers.'
+                      : 'Fencers are distributed into pools at random.')
+          : (weighted ? 'Each fencer starts with the lives you set — more lives = more chances to prove yourself.'
+                      : 'Everyone starts with the same number of lives.')) + '</p></div>'
 
-      + (!weighted
-          ? '<div class="field"><span>starting lives (everyone)</span>' + stepperHTML('deflife', '', m.defaultLives, 1) + '</div>'
+      + ((!weighted || m.format === 'pools')
+          ? '<div class="field"><span>starting lives' + (m.format === 'pools' ? ' (bracket)' : ' (everyone)') + '</span>' + stepperHTML('deflife', '', m.defaultLives, 1) + '</div>'
+          : '')
+
+      + (m.format === 'pools'
+          ? '<div class="field"><span>number of pools</span>' + stepperHTML('numpools', '', m.numPools, 1)
+            + '<p class="hint">' + poolPreview() + '</p></div>'
+            + '<div class="field"><span>advance to bracket · top N overall</span>' + stepperHTML('advance', '', m.advanceCount, 1) + '</div>'
           : '')
 
       + '<div class="field"><span>fencers · ' + named + '</span>'
@@ -826,21 +968,91 @@
     return rec.d ? (rec.w + '-' + rec.l + '-' + rec.d) : (rec.w + '-' + rec.l);
   }
   function renderHistory() {
-    if (!state.rounds.length) return '<p class="hint">No rounds played yet.</p>';
-    const rounds = state.rounds.slice().reverse();
-    return '<div class="history">' + rounds.map(r => {
-      const bouts = r.pairings.map(p => {
-        if (p.fencerB == null) return '<div class="hbout">🛡 bye — ' + esc(nameOf(p.fencerA)) + '</div>';
-        const A = esc(nameOf(p.fencerA)), B = esc(nameOf(p.fencerB));
-        let txt;
-        if (p.result === 'A') txt = '<b>' + A + '</b> beat ' + B;
-        else if (p.result === 'B') txt = '<b>' + B + '</b> beat ' + A;
-        else if (p.result === 'double') txt = '⚔ double — ' + A + ' / ' + B;
-        else txt = A + ' vs ' + B + ' <span class="pend">(pending)</span>';
-        return '<div class="hbout">' + txt + '</div>';
-      }).join('');
-      return '<div class="hround"><div class="hround-t">round ' + r.index + '</div>' + bouts + '</div>';
-    }).join('') + '</div>';
+    let html = '';
+    if (state.pools && state.pools.length) {
+      html += '<div class="history">' + state.pools.map(g => {
+        const standing = g.fencerIds.slice().sort((x, y) => {
+          const w = poolWins(y) - poolWins(x); if (w) return w;
+          return (fencerById(x).seed || 0) - (fencerById(y).seed || 0);
+        });
+        return '<div class="hround"><div class="hround-t">pool ' + g.index + '</div>'
+          + standing.map((id, i) => '<div class="hbout">' + (i + 1) + '. <b>' + esc(nameOf(id)) + '</b> ' + rkTag(id) + ' — ' + poolWins(id) + 'W</div>').join('')
+          + '</div>';
+      }).join('') + '</div>';
+    }
+    if (state.rounds.length) {
+      const rounds = state.rounds.slice().reverse();
+      html += '<div class="history"' + (html ? ' style="margin-top:.75rem"' : '') + '>' + rounds.map(r => {
+        const bouts = r.pairings.map(p => {
+          if (p.fencerB == null) return '<div class="hbout">🛡 bye — ' + esc(nameOf(p.fencerA)) + '</div>';
+          const A = esc(nameOf(p.fencerA)), B = esc(nameOf(p.fencerB));
+          let txt;
+          if (p.result === 'A') txt = '<b>' + A + '</b> beat ' + B;
+          else if (p.result === 'B') txt = '<b>' + B + '</b> beat ' + A;
+          else if (p.result === 'double') txt = '⚔ double — ' + A + ' / ' + B;
+          else txt = A + ' vs ' + B + ' <span class="pend">(pending)</span>';
+          return '<div class="hbout">' + txt + '</div>';
+        }).join('');
+        return '<div class="hround"><div class="hround-t">' + (state.meta.format === 'pools' ? 'bracket round ' : 'round ') + r.index + '</div>' + bouts + '</div>';
+      }).join('') + '</div>';
+    }
+    return html || '<p class="hint">No rounds played yet.</p>';
+  }
+
+  // ---- pools screen ----
+  function renderPoolBout(g, bt) {
+    const A = esc(nameOf(bt.a)), B = esc(nameOf(bt.b));
+    if (bt.result == null) {
+      return '<div class="bout"><div class="bout-fencers"><span class="bn">' + A + '</span><span class="vs">vs</span><span class="bn">' + B + '</span></div>'
+        + '<div class="result-btns" style="grid-template-columns:1fr 1fr">'
+        + '<button class="btn win" data-action="pool-result" data-i="' + g.index + '" data-bid="' + bt.id + '" data-r="A">' + A + ' won</button>'
+        + '<button class="btn win" data-action="pool-result" data-i="' + g.index + '" data-bid="' + bt.id + '" data-r="B">' + B + ' won</button>'
+        + '</div></div>';
+    }
+    const res = bt.result === 'A' ? A : B;
+    return '<div class="bout done"><div class="bout-summary"><span class="res">✓ ' + res + ' won</span>'
+      + '<button class="btn tiny ghost" data-action="pool-undo-result" data-i="' + g.index + '" data-bid="' + bt.id + '">undo</button></div></div>';
+  }
+  function renderPoolCard(g) {
+    const open = ui.poolOpen[g.index] !== false;
+    const standing = g.fencerIds.slice().sort((x, y) => {
+      const w = poolWins(y) - poolWins(x); if (w) return w;
+      return (fencerById(x).seed || 0) - (fencerById(y).seed || 0);
+    });
+    let s = '<div class="card" style="margin-top:1rem"><div class="card-title">'
+      + '<button class="btn tiny ghost" data-action="toggle-pool" data-i="' + g.index + '">'
+      + (open ? '▾ pool ' : '▸ pool ') + g.index + ' · ' + g.fencerIds.length + ' fencers</button>'
+      + '<span class="srec">' + g.bouts.filter(b => b.result).length + '/' + g.bouts.length + '</span></div>';
+    if (open) {
+      s += '<div class="standings">' + standing.map((id, i) =>
+        '<div class="srow"><span class="place">' + (i + 1) + '</span>'
+        + '<span class="sname">' + esc(nameOf(id)) + ' ' + rkTag(id) + '</span>'
+        + '<span class="srec">' + poolWins(id) + 'W</span></div>').join('') + '</div>';
+      s += '<div class="bouts" style="margin-top:.7rem">' + g.bouts.map(bt => renderPoolBout(g, bt)).join('') + '</div>';
+    }
+    return s + '</div>';
+  }
+  function renderPools() {
+    const m = state.meta;
+    const done = poolBoutsDoneCount(), total = poolBoutsTotal();
+    const adv = Math.min(m.advanceCount || state.fencers.length, state.fencers.length);
+    let html =
+      '<div class="lv-head"><div class="title-wrap">'
+      + '<input class="lv-name" data-bind="name" value="' + esc(m.name) + '" placeholder="untitled tournament" autocapitalize="words" autocomplete="off">'
+      + '<span class="lv-sub">pools · ' + done + '/' + total + ' bouts · top ' + adv + ' advance</span>'
+      + '</div><div class="head-btns">'
+      + '<button class="menu-btn" data-action="global-undo" aria-label="undo" title="undo last action"' + (undoStack.length ? '' : ' disabled') + '>↶</button>'
+      + '<button class="menu-btn" data-action="toggle-menu" aria-label="menu">⋯</button>'
+      + '</div></div>';
+    if (ui.menuOpen) html += '<div class="menu">'
+      + '<button class="btn ghost" data-action="reshuffle-pools">reshuffle pools</button>'
+      + '<button class="btn ghost" data-action="open-export">export / back up</button>'
+      + '<button class="btn ghost" data-action="open-import">import</button>'
+      + '<button class="btn danger" data-action="confirm-reset">reset tournament</button>'
+      + '</div>';
+    state.pools.forEach(g => { html += renderPoolCard(g); });
+    html += '<div class="sticky-bar"><button class="btn primary big" style="width:100%" data-action="advance-to-bracket"' + (poolsComplete() ? '' : ' disabled') + '>to top cut &amp; bracket →</button></div>';
+    app.innerHTML = html;
   }
 
   function renderLive() {
@@ -853,7 +1065,7 @@
       '<div class="lv-head">'
       + '<div class="title-wrap">'
       + '<input class="lv-name" data-bind="name" value="' + esc(m.name) + '" placeholder="untitled tournament" autocapitalize="words" autocomplete="off">'
-      + '<span class="lv-sub">round ' + (r ? r.index : 0) + ' · ' + aliveCount + ' still in · ' + (m.mode) + '</span>'
+      + '<span class="lv-sub">' + (m.format === 'pools' ? 'top cut · ' : '') + 'round ' + (r ? r.index : 0) + ' · ' + aliveCount + ' still in</span>'
       + '</div>'
       + '<div class="head-btns">'
       + '<button class="menu-btn" data-action="global-undo" aria-label="undo" title="undo last action"' + (undoStack.length ? '' : ' disabled') + '>↶</button>'
@@ -1096,6 +1308,12 @@
       case 'do-bulk': bulkAdd(); break;
       case 'remove-fencer': state.fencers = state.fencers.filter(f => f.id !== ds.id); save(); render(); break;
       case 'start': startTournament(); break;
+      case 'set-format': state.meta.format = ds.format; save(); render(); break;
+      case 'numpools-inc': state.meta.numPools = Math.max(1, (state.meta.numPools || 1) + 1); save(); render(); break;
+      case 'numpools-dec': state.meta.numPools = Math.max(1, (state.meta.numPools || 1) - 1); save(); render(); break;
+      case 'advance-inc': state.meta.advanceCount = Math.max(1, (state.meta.advanceCount || 1) + 1); save(); render(); break;
+      case 'advance-dec': state.meta.advanceCount = Math.max(1, (state.meta.advanceCount || 1) - 1); save(); render(); break;
+      case 'cycle-rank': { const f = fencerById(ds.id); if (f) { const i = RANK_ORDER.indexOf(f.rank || 'N/A'); f.rank = RANK_ORDER[(i + 1) % RANK_ORDER.length]; save(); render(); } break; }
       case 'deflife-inc': state.meta.defaultLives = clampLives(state.meta.defaultLives + 1) || 1; save(); render(); break;
       case 'deflife-dec': state.meta.defaultLives = Math.max(1, clampLives(state.meta.defaultLives - 1)); save(); render(); break;
       case 'startlife-inc': { const f = fencerById(ds.id); if (f) { f.startingLives = clampLives((f.startingLives || 1) + 1) || 1; save(); render(); } break; }
@@ -1111,6 +1329,11 @@
       case 'toggle-standings': ui.standingsOpen = !ui.standingsOpen; render(); break;
       case 'toggle-history': ui.historyOpen = !ui.historyOpen; render(); break;
       case 'global-undo': popUndo(); break;
+      case 'toggle-pool': ui.poolOpen[ds.i] = ui.poolOpen[ds.i] === false ? true : false; render(); break;
+      case 'pool-result': recordPoolResult(ds.i, ds.bid, ds.r); break;
+      case 'pool-undo-result': undoPoolResult(ds.i, ds.bid); break;
+      case 'advance-to-bracket': advanceToBracket(); break;
+      case 'reshuffle-pools': generatePools(); ui.menuOpen = false; save(); render(); break;
       case 'edit-fencer': ui.fencerEdit = ui.fencerEdit === ds.id ? null : ds.id; render(); break;
       case 'close-fencer': ui.fencerEdit = null; render(); break;
       case 'curlife-inc': { const f = fencerById(ds.id); if (f) { setLives(ds.id, (f.currentLives || 0) + 1); render(); } break; }
@@ -1173,6 +1396,8 @@
     else if (bind === 'deflife') { state.meta.defaultLives = clampLives(t.value) || 1; save(); }
     else if (bind === 'startlife') { const f = fencerById(t.dataset.id); if (f) { f.startingLives = clampLives(t.value); save(); } }
     else if (bind === 'curlife') { const f = fencerById(t.dataset.id); if (f) { f.currentLives = clampLives(t.value); save(); } }
+    else if (bind === 'numpools') { state.meta.numPools = Math.max(1, parseInt(t.value, 10) || 1); save(); }
+    else if (bind === 'advance') { state.meta.advanceCount = Math.max(1, parseInt(t.value, 10) || 1); save(); }
   });
 
   // commit life-number edits on blur so status/elimination updates
