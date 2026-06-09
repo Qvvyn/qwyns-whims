@@ -242,6 +242,16 @@
   /* sticky footer action */
   .sticky-bar { position: sticky; bottom: 0; padding: 0.8rem 0 0.2rem; margin-top: 1rem; background: linear-gradient(to top, var(--bg) 55%, transparent); }
 
+  .head-btns { display: flex; gap: 0.5rem; flex: 0 0 auto; }
+  .menu-btn[disabled] { opacity: 0.3; cursor: default; }
+  .srec { font-size: 0.7rem; color: var(--ink-dim); white-space: nowrap; letter-spacing: 0.05em; }
+  .history { display: flex; flex-direction: column; gap: 0.75rem; }
+  .hround { border: 1px solid var(--line); border-radius: 10px; padding: 0.6rem 0.7rem; }
+  .hround-t { font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 0.4rem; }
+  .hbout { font-size: 0.82rem; line-height: 1.85; color: var(--ink); }
+  .hbout b { color: var(--purple); }
+  .hbout .pend { color: var(--ink-dim); }
+
   .champ-banner { text-align: center; padding: 1.5rem 1rem; border: 1px solid var(--gold); border-radius: 16px; background: radial-gradient(ellipse at 50% 0%, rgba(230,181,76,0.18), transparent 70%); margin-bottom: 1.25rem; }
   .champ-banner .crown { font-size: 1.6rem; }
   .champ-banner .who { font-size: 1.3rem; color: var(--gold); margin-top: 0.4rem; text-shadow: 0 0 18px rgba(230,181,76,0.5); }
@@ -287,7 +297,28 @@
   const modalRoot = document.getElementById('modal-root');
 
   // transient UI state (not persisted)
-  const ui = { menuOpen: false, standingsOpen: false, fencerEdit: null, editRound: false, draft: null, modal: null };
+  const ui = { menuOpen: false, standingsOpen: false, historyOpen: false, fencerEdit: null, editRound: false, draft: null, modal: null };
+
+  // ---- global undo: snapshot the whole state before each mutating action ----
+  const undoStack = [];
+  const UNDO_CAP = 50;
+  function pushUndo() {
+    try { undoStack.push(JSON.stringify(state)); if (undoStack.length > UNDO_CAP) undoStack.shift(); } catch (e) {}
+  }
+  function popUndo() {
+    if (!undoStack.length) return;
+    let snap; try { snap = JSON.parse(undoStack.pop()); } catch (e) { return; }
+    state = snap;
+    ui.fencerEdit = null; ui.editRound = false; ui.draft = null; ui.draftError = null;
+    save(); render();
+  }
+  // Click actions that change state are snapshotted for undo; pure-UI toggles are excluded.
+  const MUTATING = new Set([
+    'set-mode', 'add-fencer-setup', 'remove-fencer', 'start', 'deflife-inc', 'deflife-dec',
+    'startlife-inc', 'startlife-dec', 'result', 'undo-result', 'undo-last', 'advance', 'finish',
+    'curlife-inc', 'curlife-dec', 'eliminate', 'revive', 'add-fencer-live', 'delete-fencer',
+    'draft-save', 'do-reset', 'do-import', 'do-bulk', 'rematch'
+  ]);
 
   // ---------------- state ----------------
   function now() { return Date.now(); }
@@ -777,6 +808,41 @@
   }
 
   // ---- live ----
+  // ---- records & history (computed from state.rounds) ----
+  function fencerRecord(id) {
+    let w = 0, l = 0, d = 0, byes = 0;
+    state.rounds.forEach(r => r.pairings.forEach(p => {
+      if (p.fencerB == null) { if (p.fencerA === id) byes++; return; }
+      if (p.result == null) return;
+      if (p.result === 'double') { if (p.fencerA === id || p.fencerB === id) d++; return; }
+      const winner = p.result === 'A' ? p.fencerA : p.fencerB;
+      const loser = p.result === 'A' ? p.fencerB : p.fencerA;
+      if (winner === id) w++; else if (loser === id) l++;
+    }));
+    return { w: w, l: l, d: d, byes: byes };
+  }
+  function recordLabel(id) {
+    const rec = fencerRecord(id);
+    return rec.d ? (rec.w + '-' + rec.l + '-' + rec.d) : (rec.w + '-' + rec.l);
+  }
+  function renderHistory() {
+    if (!state.rounds.length) return '<p class="hint">No rounds played yet.</p>';
+    const rounds = state.rounds.slice().reverse();
+    return '<div class="history">' + rounds.map(r => {
+      const bouts = r.pairings.map(p => {
+        if (p.fencerB == null) return '<div class="hbout">🛡 bye — ' + esc(nameOf(p.fencerA)) + '</div>';
+        const A = esc(nameOf(p.fencerA)), B = esc(nameOf(p.fencerB));
+        let txt;
+        if (p.result === 'A') txt = '<b>' + A + '</b> beat ' + B;
+        else if (p.result === 'B') txt = '<b>' + B + '</b> beat ' + A;
+        else if (p.result === 'double') txt = '⚔ double — ' + A + ' / ' + B;
+        else txt = A + ' vs ' + B + ' <span class="pend">(pending)</span>';
+        return '<div class="hbout">' + txt + '</div>';
+      }).join('');
+      return '<div class="hround"><div class="hround-t">round ' + r.index + '</div>' + bouts + '</div>';
+    }).join('') + '</div>';
+  }
+
   function renderLive() {
     const m = state.meta;
     const r = currentRound();
@@ -789,7 +855,10 @@
       + '<input class="lv-name" data-bind="name" value="' + esc(m.name) + '" placeholder="untitled tournament" autocapitalize="words" autocomplete="off">'
       + '<span class="lv-sub">round ' + (r ? r.index : 0) + ' · ' + aliveCount + ' still in · ' + (m.mode) + '</span>'
       + '</div>'
+      + '<div class="head-btns">'
+      + '<button class="menu-btn" data-action="global-undo" aria-label="undo" title="undo last action"' + (undoStack.length ? '' : ' disabled') + '>↶</button>'
       + '<button class="menu-btn" data-action="toggle-menu" aria-label="menu">⋯</button>'
+      + '</div>'
       + '</div>';
 
     if (ui.menuOpen) {
@@ -823,6 +892,13 @@
       + (ui.standingsOpen ? '▾ hide fencers' : '▸ fencers &amp; lives') + '</button>'
       + '<button class="btn tiny" data-action="add-fencer-live">+ add</button></div>';
     if (ui.standingsOpen) html += renderStandings();
+    html += '</div>';
+
+    // history + records
+    html += '<div class="card" style="margin-top:1rem">'
+      + '<div class="card-title"><button class="btn tiny ghost" data-action="toggle-history">'
+      + (ui.historyOpen ? '▾ hide rounds &amp; records' : '▸ rounds &amp; records') + '</button></div>';
+    if (ui.historyOpen) html += renderHistory();
     html += '</div>';
 
     // sticky advance
@@ -875,7 +951,8 @@
       const editing = ui.fencerEdit === f.id;
       let row = '<div class="srow ' + (f.status === 'out' ? 'out' : '') + '" data-action="edit-fencer" data-id="' + f.id + '">'
         + '<span class="place">' + (f.status === 'out' ? '#' + (state.fencers.filter(x => x.status === 'out').length - f.eliminationOrder + 1) : '•') + '</span>'
-        + '<span class="sname">' + esc(f.name) + '</span>'
+        + '<span class="sname">' + esc(displayName(f)) + '</span>'
+        + '<span class="srec">' + recordLabel(f.id) + '</span>'
         + '<span class="slives">' + heartsHTML(f) + '</span>'
         + '</div>';
       if (editing) row += renderDrawer(f);
@@ -949,6 +1026,7 @@
       list += '<div class="srow ' + (f.status === 'out' ? 'out' : '') + '">'
         + '<span class="place">' + (i + 1) + '</span>'
         + '<span class="sname">' + esc(displayName(f)) + '</span>'
+        + '<span class="srec">' + recordLabel(f.id) + '</span>'
         + '<span class="slives">' + heartsHTML(f) + '</span>'
         + '</div>';
     });
@@ -957,7 +1035,9 @@
     app.innerHTML =
       '<h1 class="page-title">⚔ ' + esc(state.meta.name || 'tournament') + '</h1>'
       + banner + list
+      + '<div class="card" style="margin-top:1rem"><div class="card-title"><span>round-by-round</span></div>' + renderHistory() + '</div>'
       + '<div class="row wrap" style="margin-top:1.2rem">'
+      + '<button class="btn" data-action="global-undo"' + (undoStack.length ? '' : ' disabled') + '>↶ undo</button>'
       + '<button class="btn" data-action="open-export">export results</button>'
       + '<button class="btn" data-action="rematch">rematch (same fencers)</button>'
       + '<button class="btn danger" data-action="confirm-reset">new tournament</button>'
@@ -1029,6 +1109,8 @@
       case 'advance': advanceRound(); break;
       case 'finish': finishTournament(); break;
       case 'toggle-standings': ui.standingsOpen = !ui.standingsOpen; render(); break;
+      case 'toggle-history': ui.historyOpen = !ui.historyOpen; render(); break;
+      case 'global-undo': popUndo(); break;
       case 'edit-fencer': ui.fencerEdit = ui.fencerEdit === ds.id ? null : ds.id; render(); break;
       case 'close-fencer': ui.fencerEdit = null; render(); break;
       case 'curlife-inc': { const f = fencerById(ds.id); if (f) { setLives(ds.id, (f.currentLives || 0) + 1); render(); } break; }
@@ -1074,9 +1156,11 @@
     if (bg && e.target === bg) { ui.modal = null; ui.modalError = null; render(); return; }
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
-    if (btn.dataset.action === 'modal-bg') return;
+    const act = btn.dataset.action;
+    if (act === 'modal-bg') return;
     e.stopPropagation();
-    handleAction(btn.dataset.action, btn.dataset);
+    if (MUTATING.has(act)) pushUndo();
+    handleAction(act, btn.dataset);
   });
 
   // text input (no re-render → keeps focus)
@@ -1107,7 +1191,7 @@
     }
     if (t.id === 'import-file' && t.files && t.files[0]) {
       const reader = new FileReader();
-      reader.onload = () => { const err = tryImport(String(reader.result)); if (err) { ui.modalError = err; render(); } };
+      reader.onload = () => { pushUndo(); const err = tryImport(String(reader.result)); if (err) { ui.modalError = err; render(); } };
       reader.readAsText(t.files[0]);
     }
   });
