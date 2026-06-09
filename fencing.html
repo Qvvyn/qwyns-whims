@@ -324,7 +324,7 @@
   const modalRoot = document.getElementById('modal-root');
 
   // transient UI state (not persisted)
-  const ui = { menuOpen: false, standingsOpen: false, historyOpen: false, fencerEdit: null, editRound: false, draft: null, modal: null, poolOpen: {} };
+  const ui = { menuOpen: false, standingsOpen: false, historyOpen: false, fencerEdit: null, editRound: false, draft: null, modal: null, poolOpen: {}, addDraft: null };
 
   // ---- global undo: snapshot the whole state before each mutating action ----
   const undoStack = [];
@@ -343,7 +343,7 @@
   const MUTATING = new Set([
     'set-mode', 'add-fencer-setup', 'remove-fencer', 'start', 'deflife-inc', 'deflife-dec',
     'startlife-inc', 'startlife-dec', 'result', 'undo-result', 'undo-last', 'advance', 'finish',
-    'curlife-inc', 'curlife-dec', 'eliminate', 'revive', 'add-fencer-live', 'delete-fencer',
+    'curlife-inc', 'curlife-dec', 'eliminate', 'revive', 'delete-fencer',
     'draft-save', 'do-reset', 'do-import', 'do-bulk', 'rematch',
     'set-format', 'numpools-inc', 'numpools-dec', 'advance-inc', 'advance-dec', 'cycle-rank',
     'ranklife-inc', 'ranklife-dec', 'guarantee-inc', 'guarantee-dec',
@@ -712,10 +712,7 @@
     });
   }
   function bracketLivesFor(f) {
-    if (state.meta.mode === 'weighted' && state.meta.format === 'pools') {
-      const v = (state.meta.rankLives || {})[f.rank || 'N/A'];
-      return Math.max(1, clampLives(v != null ? v : state.meta.defaultLives));
-    }
+    // the top cut always carries the same (uniform) bracket lives
     return Math.max(1, clampLives(state.meta.defaultLives));
   }
   function advanceToBracket() {
@@ -808,10 +805,10 @@
     save(); render();
   }
   function addFencerLive() {
-    const f = { id: newFencerId(), name: 'New fencer', startingLives: state.meta.defaultLives, currentLives: Math.max(1, state.meta.defaultLives), status: 'alive', eliminationOrder: null };
-    state.fencers.push(f);
-    ui.standingsOpen = true; ui.fencerEdit = f.id;
-    save(); render();
+    // open a deliberate "add entrant" form; the actual add is confirmed at the bottom
+    ui.addDraft = { name: '', rank: 'N/A' };
+    ui.modal = 'addfencer';
+    render();
   }
   function deleteFencer(id) {
     state.fencers = state.fencers.filter(f => f.id !== id);
@@ -872,7 +869,7 @@
 
   function resetTournament() {
     state = freshState();
-    ui.menuOpen = false; ui.fencerEdit = null; ui.standingsOpen = false;
+    ui.menuOpen = false; ui.fencerEdit = null; ui.standingsOpen = false; ui.modal = null; ui.addDraft = null;
     save(); render();
   }
   function rematchSameFencers() {
@@ -939,6 +936,15 @@
       + '</div>';
   }
 
+  // Live-update the setup fencer count / start button / pool preview without a
+  // full re-render (so typing in a name field keeps focus).
+  function refreshSetupCounts() {
+    const named = state.fencers.filter(f => (f.name || '').trim().length).length;
+    const cnt = document.getElementById('fencer-count'); if (cnt) cnt.textContent = 'fencers · ' + named;
+    const sb = document.getElementById('start-btn'); if (sb) { if (named >= 2) sb.removeAttribute('disabled'); else sb.setAttribute('disabled', ''); }
+    const pp = document.getElementById('pool-preview'); if (pp) pp.textContent = poolPreview();
+  }
+
   // ---- setup ----
   function renderSetup() {
     const m = state.meta;
@@ -982,33 +988,27 @@
           : (weighted ? 'Each fencer starts with the lives you set — more lives = more chances to prove yourself.'
                       : 'Everyone starts with the same number of lives.')) + '</p></div>'
 
-      + (!weighted
-          ? '<div class="field"><span>starting lives' + (m.format === 'pools' ? ' (bracket, everyone)' : ' (everyone)') + '</span>' + stepperHTML('deflife', '', m.defaultLives, 1) + '</div>'
-          : '')
-
-      + (m.format === 'pools' && weighted
-          ? '<div class="field"><span>bracket lives by rank</span>'
-            + RANK_ORDER.map(rk => '<div class="row" style="justify-content:space-between"><span class="rktag rk-' + rk.replace('/', '') + '">' + rk + '</span>'
-                + stepperHTML('ranklife', rk, (m.rankLives && m.rankLives[rk] != null ? m.rankLives[rk] : m.defaultLives), 1) + '</div>').join('')
-            + '<p class="hint">Lower ranks get more lives — more chances to prove themselves.</p></div>'
+      + ((m.format !== 'pools' && !weighted)
+          ? '<div class="field"><span>starting lives (everyone)</span>' + stepperHTML('deflife', '', m.defaultLives, 1) + '</div>'
           : '')
 
       + (m.format === 'pools'
           ? '<div class="field"><span>number of pools</span>' + stepperHTML('numpools', '', m.numPools, 1)
-            + '<p class="hint">' + poolPreview() + '</p></div>'
+            + '<p class="hint" id="pool-preview">' + poolPreview() + '</p></div>'
             + '<div class="field"><span>advance to bracket · top N overall</span>' + stepperHTML('advance', '', m.advanceCount, 1) + '</div>'
             + '<div class="field"><span>guarantee top N per pool</span>' + stepperHTML('guarantee', '', m.guaranteePerPool || 0, 0)
             + '<p class="hint">' + ((m.guaranteePerPool || 0) > 0
                 ? 'Top ' + m.guaranteePerPool + ' of every pool advance automatically; remaining slots go to the best records overall.'
                 : 'Pure overall cut — best records across all pools advance.') + '</p></div>'
+            + '<div class="field"><span>starting lives · bracket (everyone)</span>' + stepperHTML('deflife', '', m.defaultLives, 1) + '</div>'
           : '')
 
-      + '<div class="field"><span>fencers · ' + named + '</span>'
+      + '<div class="field"><span id="fencer-count">fencers · ' + named + '</span>'
       + '<div class="fencer-rows">' + rows + '</div>'
       + '<div class="row wrap"><button class="btn ghost" data-action="add-fencer-setup">+ add fencer</button>'
       + '<button class="btn ghost" data-action="open-bulk">paste a list</button></div></div>'
 
-      + '<button class="btn primary big" data-action="start" ' + (named >= 2 ? '' : 'disabled') + '>start tournament →</button>'
+      + '<button class="btn primary big" id="start-btn" data-action="start" ' + (named >= 2 ? '' : 'disabled') + '>start tournament →</button>'
       + '<button class="btn ghost" data-action="open-import">import a saved tournament</button>'
       + '</section>';
   }
@@ -1373,6 +1373,17 @@
         + '<button class="btn primary" data-action="do-bulk">add these</button>'
         + '<button class="btn ghost" data-action="close-modal">cancel</button>'
         + '</div>';
+    } else if (ui.modal === 'addfencer') {
+      const d = ui.addDraft || { name: '', rank: 'N/A' };
+      inner = '<h2>add fencer</h2>'
+        + '<input class="text-input" id="add-name" data-bind="addname" value="' + esc(d.name) + '" placeholder="name" autocapitalize="words" autocomplete="off">'
+        + (state.meta.format === 'pools'
+            ? '<div class="row" style="gap:.6rem;align-items:center;margin-top:.2rem"><span class="lbl">rank</span><button class="btn tiny rkchip rk-' + (d.rank || 'N/A').replace('/', '') + '" data-action="cycle-add-rank">' + (d.rank || 'N/A') + '</button></div>'
+            : '')
+        + '<div class="modal-actions">'
+        + '<button class="btn primary" data-action="do-add-fencer">add to tournament</button>'
+        + '<button class="btn ghost" data-action="close-modal">cancel</button>'
+        + '</div>';
     } else if (ui.modal === 'reset') {
       inner = '<h2>reset tournament?</h2>'
         + '<p class="hint">This clears all fencers, rounds and lives and returns to setup. This cannot be undone.</p>'
@@ -1431,6 +1442,17 @@
       case 'eliminate': eliminateFencer(ds.id); break;
       case 'revive': reviveFencer(ds.id); break;
       case 'add-fencer-live': addFencerLive(); break;
+      case 'cycle-add-rank': { ui.addDraft = ui.addDraft || { name: '', rank: 'N/A' }; const i = RANK_ORDER.indexOf(ui.addDraft.rank || 'N/A'); ui.addDraft.rank = RANK_ORDER[(i + 1) % RANK_ORDER.length]; render(); break; }
+      case 'do-add-fencer': {
+        const el = document.getElementById('add-name');
+        const nm = ((el ? el.value : (ui.addDraft && ui.addDraft.name)) || '').trim();
+        if (!nm) return;
+        pushUndo();
+        const f = { id: newFencerId(), name: nm, startingLives: state.meta.defaultLives, currentLives: Math.max(1, state.meta.defaultLives), status: 'alive', eliminationOrder: null, rank: (ui.addDraft && ui.addDraft.rank) || 'N/A' };
+        state.fencers.push(f);
+        ui.modal = null; ui.addDraft = null; ui.standingsOpen = true; ui.fencerEdit = f.id;
+        save(); render(); break;
+      }
       case 'delete-fencer': deleteFencer(ds.id); break;
 
       // edit round
@@ -1484,7 +1506,7 @@
     const bind = t.dataset && t.dataset.bind;
     if (!bind) return;
     if (bind === 'name') { state.meta.name = t.value; save(); }
-    else if (bind === 'rename') { const f = fencerById(t.dataset.id); if (f) { f.name = t.value; save(); } }
+    else if (bind === 'rename') { const f = fencerById(t.dataset.id); if (f) { f.name = t.value; save(); } if (state.meta.status === 'setup') refreshSetupCounts(); }
     else if (bind === 'deflife') { state.meta.defaultLives = clampLives(t.value) || 1; save(); }
     else if (bind === 'startlife') { const f = fencerById(t.dataset.id); if (f) { f.startingLives = clampLives(t.value); save(); } }
     else if (bind === 'curlife') { const f = fencerById(t.dataset.id); if (f) { f.currentLives = clampLives(t.value); save(); } }
@@ -1492,6 +1514,7 @@
     else if (bind === 'advance') { state.meta.advanceCount = Math.max(1, parseInt(t.value, 10) || 1); save(); }
     else if (bind === 'guarantee') { state.meta.guaranteePerPool = Math.max(0, parseInt(t.value, 10) || 0); save(); }
     else if (bind === 'ranklife') { state.meta.rankLives = state.meta.rankLives || {}; state.meta.rankLives[t.dataset.id] = Math.max(1, clampLives(t.value)); save(); }
+    else if (bind === 'addname') { ui.addDraft = ui.addDraft || { name: '', rank: 'N/A' }; ui.addDraft.name = t.value; }
   });
 
   // commit life-number edits on blur so status/elimination updates
