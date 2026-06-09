@@ -216,7 +216,10 @@
   .bout-fencers { display: flex; align-items: center; justify-content: center; gap: 0.6rem; margin-bottom: 0.7rem; flex-wrap: wrap; text-align: center; }
   .bn { font-size: 0.95rem; }
   .vs { color: var(--ink-dim); font-size: 0.75rem; }
-  .lives { color: var(--alive); font-size: 0.78rem; white-space: nowrap; }
+  .lives { font-size: 0.78rem; white-space: nowrap; letter-spacing: 0.05em; }
+  .hp { color: var(--purple); text-shadow: 0 0 6px rgba(168, 85, 247, 0.55); }
+  .hp-lost { color: #1a1326; }
+  .hp-n { color: var(--purple); }
   .result-btns { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0.5rem; }
   .bout-summary { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
   .bout-summary .res { font-size: 0.85rem; color: var(--gold); }
@@ -231,8 +234,7 @@
   .srow.out .sname { text-decoration: line-through; }
   .srow .sname { flex: 1; font-size: 0.92rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .srow .place { font-size: 0.7rem; color: var(--ink-dim); width: 1.5rem; }
-  .srow .slives { font-size: 0.82rem; color: var(--alive); white-space: nowrap; }
-  .srow.out .slives { color: var(--out); }
+  .srow .slives { font-size: 0.82rem; white-space: nowrap; letter-spacing: 0.05em; }
 
   .drawer { border: 1px solid var(--line); border-radius: 12px; padding: 0.85rem; margin: 0.2rem 0 0.5rem; background: rgba(6,4,16,0.4); display: flex; flex-direction: column; gap: 0.7rem; }
   .drawer .lbl { font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); }
@@ -332,7 +334,16 @@
   function aliveFencers() { return state.fencers.filter(f => f.status === 'alive'); }
   function currentRound() { return state.rounds.length ? state.rounds[state.rounds.length - 1] : null; }
   function roundComplete(r) { return r && r.pairings.every(p => p.result != null); }
-  function nameOf(id) { const f = fencerById(id); return f ? f.name : '?'; }
+  function nameOf(id) { const f = fencerById(id); return f ? displayName(f) : '?'; }
+  // Disambiguate fencers who share a name (display only — underlying data unchanged).
+  function displayName(f) {
+    if (!f) return '?';
+    const key = (f.name || '').trim().toLowerCase();
+    if (!key) return f.name || '?';
+    const dupes = state.fencers.filter(x => (x.name || '').trim().toLowerCase() === key);
+    if (dupes.length <= 1) return f.name;
+    return f.name + ' #' + (dupes.findIndex(x => x.id === f.id) + 1);
+  }
 
   function esc(s) {
     return String(s == null ? '' : s)
@@ -340,7 +351,16 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function clampLives(n) { n = parseInt(n, 10); if (isNaN(n) || n < 0) return 0; if (n > 999) return 999; return n; }
-  function livesGlyph(n) { return n <= 0 ? '✕' : (n <= 5 ? '♥'.repeat(n) : n + '♥'); }
+  // Hearts: remaining lives in purple, lives lost in black, across the fencer's full pool.
+  function heartsHTML(f) {
+    const cur = Math.max(0, f && f.currentLives != null ? f.currentLives : 0);
+    const total = Math.max(cur, f && f.startingLives ? f.startingLives : cur);
+    if (total > 6) return '<span class="hp-n">' + cur + '/' + total + '</span>';
+    if (total === 0) return '<span class="hp-n">0</span>';
+    let h = '';
+    for (let i = 0; i < total; i++) h += '<span class="' + (i < cur ? 'hp' : 'hp-lost') + '">♥</span>';
+    return h;
+  }
 
   function shuffle(arr) {
     const a = arr.slice();
@@ -823,21 +843,21 @@
       }
       const a = fencerById(p.fencerA), b = fencerById(p.fencerB);
       const head = '<div class="bout-fencers">'
-        + '<span class="bn">' + esc(a ? a.name : '?') + ' <span class="lives">' + livesGlyph(a ? a.currentLives : 0) + '</span></span>'
+        + '<span class="bn">' + esc(a ? displayName(a) : '?') + ' <span class="lives">' + heartsHTML(a) + '</span></span>'
         + '<span class="vs">vs</span>'
-        + '<span class="bn">' + esc(b ? b.name : '?') + ' <span class="lives">' + livesGlyph(b ? b.currentLives : 0) + '</span></span>'
+        + '<span class="bn">' + esc(b ? displayName(b) : '?') + ' <span class="lives">' + heartsHTML(b) + '</span></span>'
         + '</div>';
       if (p.result == null) {
         return '<div class="bout">' + head
           + '<div class="result-btns">'
-          + '<button class="btn win" data-action="result" data-pid="' + p.id + '" data-r="A">' + esc(a ? a.name : 'A') + ' won</button>'
+          + '<button class="btn win" data-action="result" data-pid="' + p.id + '" data-r="A">' + esc(a ? displayName(a) : 'A') + ' won</button>'
           + '<button class="btn draw" data-action="result" data-pid="' + p.id + '" data-r="double">double</button>'
-          + '<button class="btn win" data-action="result" data-pid="' + p.id + '" data-r="B">' + esc(b ? b.name : 'B') + ' won</button>'
+          + '<button class="btn win" data-action="result" data-pid="' + p.id + '" data-r="B">' + esc(b ? displayName(b) : 'B') + ' won</button>'
           + '</div></div>';
       }
       let res;
-      if (p.result === 'A') res = '✓ ' + esc(a ? a.name : 'A') + ' won';
-      else if (p.result === 'B') res = '✓ ' + esc(b ? b.name : 'B') + ' won';
+      if (p.result === 'A') res = '✓ ' + esc(a ? displayName(a) : 'A') + ' won';
+      else if (p.result === 'B') res = '✓ ' + esc(b ? displayName(b) : 'B') + ' won';
       else res = '⚔ double — both −1';
       return '<div class="bout done">' + head
         + '<div class="bout-summary"><span class="res">' + res + '</span>'
@@ -856,7 +876,7 @@
       let row = '<div class="srow ' + (f.status === 'out' ? 'out' : '') + '" data-action="edit-fencer" data-id="' + f.id + '">'
         + '<span class="place">' + (f.status === 'out' ? '#' + (state.fencers.filter(x => x.status === 'out').length - f.eliminationOrder + 1) : '•') + '</span>'
         + '<span class="sname">' + esc(f.name) + '</span>'
-        + '<span class="slives">' + (f.status === 'out' ? 'out' : f.currentLives + '♥') + '</span>'
+        + '<span class="slives">' + heartsHTML(f) + '</span>'
         + '</div>';
       if (editing) row += renderDrawer(f);
       return row;
@@ -882,7 +902,7 @@
       let o = '';
       if (allowBye) o += '<option value="" ' + (!sel ? 'selected' : '') + '>— bye —</option>';
       else o += '<option value="">—</option>';
-      alive.forEach(f => { o += '<option value="' + f.id + '" ' + (sel === f.id ? 'selected' : '') + '>' + esc(f.name) + '</option>'; });
+      alive.forEach(f => { o += '<option value="' + f.id + '" ' + (sel === f.id ? 'selected' : '') + '>' + esc(displayName(f)) + '</option>'; });
       return o;
     };
     let html = '<p class="hint" style="margin-bottom:.7rem">Pick who fights whom. Each fencer appears once; one may sit out (bye). Saving clears any results already recorded this round.</p>';
@@ -916,20 +936,20 @@
     const champs = state.fencers.filter(f => f.status === 'alive');
     let banner;
     if (champs.length === 1) {
-      banner = '<div class="champ-banner"><div class="crown">👑</div><div class="lbl">champion</div><div class="who">' + esc(champs[0].name) + '</div></div>';
+      banner = '<div class="champ-banner"><div class="crown">👑</div><div class="lbl">champion</div><div class="who">' + esc(displayName(champs[0])) + '</div></div>';
     } else if (champs.length === 0) {
-      const top = ranked.slice(0, 2).map(f => esc(f.name)).join(' & ');
+      const top = ranked.slice(0, 2).map(f => esc(displayName(f))).join(' & ');
       banner = '<div class="champ-banner"><div class="crown">🤝</div><div class="lbl">co-champions</div><div class="who">' + top + '</div></div>';
     } else {
-      banner = '<div class="champ-banner"><div class="crown">⚔</div><div class="lbl">still standing</div><div class="who">' + champs.map(f => esc(f.name)).join(' & ') + '</div></div>';
+      banner = '<div class="champ-banner"><div class="crown">⚔</div><div class="lbl">still standing</div><div class="who">' + champs.map(f => esc(displayName(f))).join(' & ') + '</div></div>';
     }
 
     let list = '<div class="card"><div class="card-title"><span>final standings</span></div><div class="standings">';
     ranked.forEach((f, i) => {
       list += '<div class="srow ' + (f.status === 'out' ? 'out' : '') + '">'
         + '<span class="place">' + (i + 1) + '</span>'
-        + '<span class="sname">' + esc(f.name) + '</span>'
-        + '<span class="slives">' + (f.status === 'alive' ? f.currentLives + '♥' : 'out') + '</span>'
+        + '<span class="sname">' + esc(displayName(f)) + '</span>'
+        + '<span class="slives">' + heartsHTML(f) + '</span>'
         + '</div>';
     });
     list += '</div></div>';
