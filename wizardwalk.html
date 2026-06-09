@@ -31,6 +31,7 @@
     height: 100%;
     background: var(--bg);
     color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
     overflow: hidden;
   }
 
@@ -99,88 +100,37 @@
   main {
     flex: 1 1 auto;
     display: flex;
-    flex-direction: column;
-    padding: 0 1rem 1rem;
-    min-height: 0;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    text-align: center;
     z-index: 1;
   }
 
-  .game-frame {
-    flex: 1 1 auto;
-    position: relative;
-    border: 1px solid rgba(230, 181, 76, 0.3);
-    background: var(--bg-deep);
-    box-shadow: 0 20px 60px -20px rgba(124, 58, 237, 0.5);
-    overflow: hidden;
-    min-height: 0;
-  }
-
-  .game-frame iframe {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    display: block;
-  }
-
-  .game-controls {
-    flex: 0 0 auto;
-    margin-top: 0.5rem;
+  .away {
+    max-width: 26rem;
     display: flex;
-    justify-content: flex-end;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    letter-spacing: 0.1em;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .away .glyph {
+    font-size: 2rem;
+    filter: drop-shadow(0 0 18px rgba(230, 181, 76, 0.5));
+    opacity: 0.85;
+  }
+
+  .away p {
+    font-size: 0.85rem;
+    line-height: 1.9;
+    letter-spacing: 0.06em;
     color: var(--ink-dim);
+    font-style: italic;
   }
 
-  .fullscreen-btn {
-    background: transparent;
-    border: 1px solid rgba(230, 181, 76, 0.3);
-    color: var(--ink);
-    padding: 0.4rem 0.9rem;
-    font-family: inherit;
-    font-size: inherit;
-    letter-spacing: inherit;
-    cursor: pointer;
-    transition: all 0.3s;
-    text-transform: lowercase;
-  }
-
-  .fullscreen-btn:hover {
-    border-color: var(--gold);
-    color: var(--gold);
-    text-shadow: 0 0 12px rgba(230, 181, 76, 0.6);
-  }
-
-  /* Pseudo-fullscreen for iOS Safari (which can't real-fullscreen non-video elements) */
-  /* Body taller than viewport + programmatic scroll = iOS hides the URL bar */
-  html.pseudo-fs, body.pseudo-fs {
-    overflow: visible !important;
-    height: auto !important;
-    min-height: 110vh;
-  }
-  body.pseudo-fs .top-nav { display: none; }
-  body.pseudo-fs main {
-    padding: 0;
-    min-height: 110vh;
-  }
-  body.pseudo-fs .game-frame {
-    position: fixed;
-    inset: 0;
-    border: 0;
-    z-index: 9999;
-    box-shadow: none;
-  }
-  body.pseudo-fs .game-controls {
-    position: fixed;
-    top: env(safe-area-inset-top, 0.5rem);
-    right: env(safe-area-inset-right, 0.5rem);
-    z-index: 10000;
-    margin: 0;
-  }
-  body.pseudo-fs .fullscreen-btn {
-    background: rgba(10, 6, 18, 0.7);
-    backdrop-filter: blur(6px);
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
   }
 </style>
 </head>
@@ -196,91 +146,11 @@
 </nav>
 
 <main>
-  <div class="game-frame" id="gameFrame">
-    <iframe
-      id="gameIframe"
-      src="walk/DungeonCrawler.html"
-      title="wizardwalk · dungeon crawler"
-      allow="cross-origin-isolated; autoplay; fullscreen; gamepad"
-      allowfullscreen></iframe>
-  </div>
-  <div class="game-controls">
-    <button class="fullscreen-btn" id="fsBtn" type="button">→ fullscreen</button>
+  <div class="away">
+    <span class="glyph">🧙</span>
+    <p>the wizard has grown too large for this domain.. they shall return...</p>
   </div>
 </main>
-
-<script>
-  const fsBtn = document.getElementById('fsBtn');
-  const gameFrame = document.getElementById('gameFrame');
-
-  function getFullscreenElement() {
-    return document.fullscreenElement
-      || document.webkitFullscreenElement
-      || document.mozFullScreenElement
-      || document.msFullscreenElement;
-  }
-
-  function requestFullscreen(el) {
-    const fn = el.requestFullscreen
-      || el.webkitRequestFullscreen
-      || el.mozRequestFullScreen
-      || el.msRequestFullscreen;
-    return fn ? fn.call(el) : Promise.reject(new Error('no-fullscreen-api'));
-  }
-
-  function exitFullscreen() {
-    const fn = document.exitFullscreen
-      || document.webkitExitFullscreen
-      || document.mozCancelFullScreen
-      || document.msExitFullscreen;
-    if (fn) fn.call(document);
-  }
-
-  function isPseudoFs() {
-    return document.body.classList.contains('pseudo-fs');
-  }
-
-  function setBtnLabel() {
-    const active = !!getFullscreenElement() || isPseudoFs();
-    fsBtn.textContent = active ? '← exit fullscreen' : '→ fullscreen';
-  }
-
-  function enterPseudoFs() {
-    document.documentElement.classList.add('pseudo-fs');
-    document.body.classList.add('pseudo-fs');
-    setBtnLabel();
-    // Nudge iOS Safari to retract its URL bar. Body is intentionally taller
-    // than the viewport in pseudo-fs mode so this scroll has somewhere to go.
-    setTimeout(() => window.scrollTo(0, 1), 50);
-  }
-
-  function exitPseudoFs() {
-    document.documentElement.classList.remove('pseudo-fs');
-    document.body.classList.remove('pseudo-fs');
-    window.scrollTo(0, 0);
-    setBtnLabel();
-  }
-
-  fsBtn.addEventListener('click', async () => {
-    if (getFullscreenElement()) {
-      exitFullscreen();
-      return;
-    }
-    if (isPseudoFs()) {
-      exitPseudoFs();
-      return;
-    }
-    try {
-      await requestFullscreen(gameFrame);
-    } catch (e) {
-      // iOS Safari etc — fall back to CSS pseudo-fullscreen
-      enterPseudoFs();
-    }
-  });
-
-  ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange']
-    .forEach(evt => document.addEventListener(evt, setBtnLabel));
-</script>
 
 </body>
 </html>

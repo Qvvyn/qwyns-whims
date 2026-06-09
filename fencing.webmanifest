@@ -1,0 +1,14 @@
+{
+  "name": "Fencing Tournament Tracker",
+  "short_name": "Fencing",
+  "description": "Run practice fencing tournaments: lives, smart pairings, manual overrides.",
+  "start_url": "./fencing.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0612",
+  "theme_color": "#0a0612",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
