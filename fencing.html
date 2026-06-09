@@ -254,6 +254,24 @@
   .srow.qual { background: rgba(124, 58, 237, 0.1); border-color: var(--line); }
   .srow.qual .place { color: var(--purple); }
 
+  .sheet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+  .sheet-date { font-size: 0.72rem; color: var(--ink-dim); letter-spacing: 0.08em; }
+
+  @media print {
+    .top-nav, .no-print, .menu-btn, .head-btns, .sticky-bar { display: none !important; }
+    body::before, body::after { display: none !important; }
+    html, body { background: #fff !important; color: #111 !important; }
+    body { display: block !important; }
+    main { max-width: none !important; padding: 0 !important; }
+    .page-title, .card-title, .lbl, .hround-t, .sheet-date, .res { color: #333 !important; text-shadow: none !important; }
+    .card, .srow, .hround, .bout, .champ-banner { border-color: #bbb !important; background: #fff !important; box-shadow: none !important; }
+    .champ-banner .who, .hbout b, .sname, .srec, .slives, .place, .hbout { color: #111 !important; text-shadow: none !important; }
+    .hp { color: #444 !important; text-shadow: none !important; }
+    .hp-lost { color: #ccc !important; }
+    .rktag { color: #333 !important; border-color: #999 !important; }
+    .srow.qual { background: #eee !important; }
+  }
+
   .rkchip { min-width: 3.2rem; text-align: center; }
   .rktag { font-size: 0.58rem; letter-spacing: 0.06em; padding: 0.05rem 0.3rem; border: 1px solid; border-radius: 6px; vertical-align: middle; }
   .rk-NA { color: var(--ink-dim); border-color: var(--line); }
@@ -1257,12 +1275,34 @@
   }
 
   // ---- finished ----
-  function renderFinished() {
-    const ranked = state.fencers.slice().sort((a, b) => {
+  function finalRanking() {
+    return state.fencers.slice().sort((a, b) => {
       if (a.status !== b.status) return a.status === 'alive' ? -1 : 1;
       if (a.status === 'out') return (b.eliminationOrder || 0) - (a.eliminationOrder || 0);
       return 0;
     });
+  }
+  function resultsSummaryText() {
+    const lines = [];
+    lines.push((state.meta.name || 'Tournament').trim());
+    lines.push(new Date(state.meta.createdAt || Date.now()).toLocaleDateString() + ' · results');
+    lines.push('');
+    finalRanking().forEach((f, i) => {
+      const rk = (state.meta.format === 'pools' && f.rank && f.rank !== 'N/A') ? ' (' + f.rank + ')' : '';
+      lines.push((i + 1) + '. ' + displayName(f) + rk + '  ' + recordLabel(f.id));
+    });
+    return lines.join('\n');
+  }
+  function flashShare() { const b = document.getElementById('share-btn'); if (b) { const t = b.textContent; b.textContent = 'copied ✓'; setTimeout(function () { if (b) b.textContent = t; }, 1500); } }
+  function shareResults() {
+    const text = resultsSummaryText();
+    const title = (state.meta.name || 'Tournament') + ' results';
+    if (navigator.share) { navigator.share({ title: title, text: text }).catch(function () {}); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(flashShare, function () {});
+  }
+  function renderFinished() {
+    const ranked = finalRanking();
+    const pools = state.meta.format === 'pools';
     const champs = state.fencers.filter(f => f.status === 'alive');
     let banner;
     if (champs.length === 1) {
@@ -1278,24 +1318,29 @@
     ranked.forEach((f, i) => {
       list += '<div class="srow ' + (f.status === 'out' ? 'out' : '') + '">'
         + '<span class="place">' + (i + 1) + '</span>'
-        + '<span class="sname">' + esc(displayName(f)) + '</span>'
+        + '<span class="sname">' + esc(displayName(f)) + (pools ? ' ' + rkTag(f.id) : '') + '</span>'
         + '<span class="srec">' + recordLabel(f.id) + '</span>'
         + '<span class="slives">' + heartsHTML(f) + '</span>'
         + '</div>';
     });
     list += '</div></div>';
+    const date = new Date(state.meta.createdAt || Date.now()).toLocaleDateString();
 
     app.innerHTML =
-      '<h1 class="page-title">⚔ ' + esc(state.meta.name || 'tournament') + '</h1>'
+      '<div class="sheet">'
+      + '<div class="sheet-head"><h1 class="page-title">⚔ ' + esc(state.meta.name || 'tournament') + '</h1><div class="sheet-date">' + esc(date) + '</div></div>'
       + banner + list
       + '<div class="card" style="margin-top:1rem"><div class="card-title"><span>round-by-round</span></div>' + renderHistory() + '</div>'
-      + '<div class="row wrap" style="margin-top:1.2rem">'
+      + '</div>'
+      + '<div class="row wrap no-print" style="margin-top:1.2rem">'
+      + '<button class="btn" id="share-btn" data-action="share-results">share results</button>'
+      + '<button class="btn" data-action="print-results">print</button>'
+      + '<button class="btn" data-action="open-export">export</button>'
+      + '<button class="btn" data-action="rematch">rematch</button>'
       + '<button class="btn" data-action="global-undo"' + (undoStack.length ? '' : ' disabled') + '>↶ undo</button>'
-      + '<button class="btn" data-action="open-export">export results</button>'
-      + '<button class="btn" data-action="rematch">rematch (same fencers)</button>'
       + '<button class="btn danger" data-action="confirm-reset">new tournament</button>'
       + '</div>'
-      + '<p class="hint" style="margin-top:.8rem">Need to fix something? Reopen the bracket by reviving a fencer from a fresh round — or rematch with the same roster.</p>';
+      + '<p class="hint no-print" style="margin-top:.8rem">“print” makes a clean black-on-white sheet (or save as PDF); “share” sends/copies the final ranking.</p>';
   }
 
   // ---- modal ----
@@ -1407,6 +1452,8 @@
       case 'close-modal': ui.modal = null; ui.modalError = null; render(); break;
       case 'modal-bg': break; // handled by target check below
       case 'rematch': rematchSameFencers(); break;
+      case 'print-results': if (typeof window !== 'undefined' && window.print) window.print(); break;
+      case 'share-results': shareResults(); break;
     }
   }
 
