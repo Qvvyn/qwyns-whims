@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="fencing" />
+<title>fencing · on my whimsical shit</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" crossorigin="anonymous" />
+<style>
+  :root {
+    --bg: #0a0612;
+    --bg-deep: #060410;
+    --ink: #e8d9ff;
+    --ink-dim: #9b8bb8;
+    --gold: #e6b54c;
+    --violet: #7c3aed;
+    --purple: #a855f7;
+    --magenta: #c026d3;
+    --alive: #e6b54c;
+    --out: #f87171;
+    --line: rgba(168, 85, 247, 0.22);
+    --panel: rgba(124, 58, 237, 0.07);
+    --grain: 0.04;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 20% 30%, rgba(124, 58, 237, 0.25), transparent 50%),
+      radial-gradient(ellipse at 80% 70%, rgba(192, 38, 211, 0.18), transparent 50%),
+      radial-gradient(ellipse at 50% 100%, rgba(168, 85, 247, 0.12), transparent 60%),
+      var(--bg-deep);
+    z-index: -2;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    opacity: var(--grain);
+    pointer-events: none;
+    z-index: -1;
+    mix-blend-mode: overlay;
+  }
+
+  /* ---- nav ---- */
+  .top-nav {
+    flex: 0 0 auto;
+    padding: 1rem 1.25rem;
+    display: flex;
+    gap: 1.25rem;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 2;
+    font-size: 0.8rem;
+    letter-spacing: 0.15em;
+    text-transform: lowercase;
+  }
+  .top-nav .nav-right { display: flex; gap: 1.25rem; flex-wrap: wrap; justify-content: flex-end; }
+  .top-nav a {
+    color: var(--ink-dim);
+    text-decoration: none;
+    padding: 0.4rem 0.2rem;
+    border-bottom: 1px solid transparent;
+    transition: color 0.3s, border-color 0.3s, text-shadow 0.3s;
+  }
+  .top-nav a:hover,
+  .top-nav a.active {
+    color: var(--purple);
+    border-bottom-color: var(--purple);
+    text-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
+  }
+
+  /* ---- layout ---- */
+  main {
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 0.5rem 1rem 6rem;
+  }
+
+  .page-title {
+    font-size: 1.05rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    color: var(--purple);
+    text-shadow: 0 0 16px rgba(168, 85, 247, 0.4);
+    margin: 0.75rem 0 1.25rem;
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 0.5rem; }
+  .field > span { font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
+  .hint { font-size: 0.72rem; color: var(--ink-dim); line-height: 1.5; }
+
+  .text-input, .num-input {
+    background: rgba(6, 4, 16, 0.6);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 1rem;
+    padding: 0.7rem 0.8rem;
+    width: 100%;
+  }
+  .text-input:focus, .num-input:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 2px rgba(168,85,247,0.25); }
+  .num-input { width: 3.4rem; text-align: center; padding: 0.7rem 0.4rem; }
+
+  /* ---- buttons ---- */
+  .btn {
+    font-family: inherit;
+    font-size: 0.92rem;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+    background: rgba(124, 58, 237, 0.14);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0.85rem 1rem;
+    min-height: 48px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, transform 0.05s;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:hover { border-color: var(--purple); }
+  .btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+  .btn.primary { background: linear-gradient(135deg, rgba(124,58,237,0.4), rgba(192,38,211,0.35)); border-color: var(--purple); color: #fff; font-weight: 500; }
+  .btn.big { font-size: 1rem; padding: 1rem; }
+  .btn.ghost { background: transparent; color: var(--ink-dim); }
+  .btn.danger { color: var(--out); border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.08); }
+  .btn.win { background: rgba(124,58,237,0.16); }
+  .btn.win:hover { border-color: var(--gold); }
+  .btn.draw { background: rgba(155,139,184,0.12); color: var(--ink-dim); }
+  .btn.tiny { min-height: 0; padding: 0.4rem 0.7rem; font-size: 0.78rem; border-radius: 9px; }
+
+  .row { display: flex; gap: 0.6rem; align-items: center; }
+  .row.wrap { flex-wrap: wrap; }
+
+  /* segmented toggle */
+  .segmented { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .segmented button {
+    flex: 1; font-family: inherit; font-size: 0.85rem; color: var(--ink-dim);
+    background: transparent; border: none; padding: 0.8rem 0.5rem; min-height: 48px; cursor: pointer;
+    text-transform: lowercase; letter-spacing: 0.06em; transition: background 0.2s, color 0.2s;
+  }
+  .segmented button.on { background: linear-gradient(135deg, rgba(124,58,237,0.4), rgba(192,38,211,0.3)); color: #fff; }
+
+  /* stepper */
+  .stepper { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .stepper button {
+    width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line);
+    background: rgba(124,58,237,0.14); color: var(--ink); font-size: 1.3rem; line-height: 1; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .stepper button:active { transform: scale(0.94); }
+
+  /* fencer setup rows */
+  .fencer-rows { display: flex; flex-direction: column; gap: 0.6rem; }
+  .frow { display: flex; gap: 0.5rem; align-items: center; }
+  .frow .text-input { flex: 1; }
+  .frow .x { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 10px; border: 1px solid rgba(248,113,113,0.35); background: rgba(248,113,113,0.07); color: var(--out); font-size: 1.1rem; cursor: pointer; }
+
+  /* live header */
+  .lv-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin: 0.5rem 0 1rem; }
+  .lv-head .title-wrap { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+  .lv-name { font-size: 1rem; color: var(--ink); background: transparent; border: none; font-family: inherit; padding: 0; width: 100%; }
+  .lv-name:focus { outline: none; color: var(--purple); }
+  .lv-sub { font-size: 0.72rem; color: var(--ink-dim); letter-spacing: 0.08em; }
+  .menu-btn { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 10px; border: 1px solid var(--line); background: rgba(124,58,237,0.14); color: var(--ink); font-size: 1.3rem; cursor: pointer; }
+
+  .menu { display: flex; flex-direction: column; gap: 0.4rem; border: 1px solid var(--line); border-radius: 12px; padding: 0.6rem; margin-bottom: 1rem; background: var(--panel); }
+
+  .card { border: 1px solid var(--line); border-radius: 14px; padding: 1rem; background: var(--panel); }
+  .card-title { font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 0.85rem; display: flex; justify-content: space-between; align-items: center; }
+
+  /* bout */
+  .bouts { display: flex; flex-direction: column; gap: 0.8rem; }
+  .bout { border: 1px solid var(--line); border-radius: 12px; padding: 0.8rem; background: rgba(6,4,16,0.35); }
+  .bout.done { opacity: 0.78; }
+  .bout-fencers { display: flex; align-items: center; justify-content: center; gap: 0.6rem; margin-bottom: 0.7rem; flex-wrap: wrap; text-align: center; }
+  .bn { font-size: 0.95rem; }
+  .vs { color: var(--ink-dim); font-size: 0.75rem; }
+  .lives { color: var(--alive); font-size: 0.78rem; white-space: nowrap; }
+  .result-btns { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0.5rem; }
+  .bout-summary { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+  .bout-summary .res { font-size: 0.85rem; color: var(--gold); }
+  .bye-chip { text-align: center; color: var(--ink-dim); font-size: 0.85rem; letter-spacing: 0.06em; padding: 0.3rem; }
+  .bye-chip b { color: var(--ink); }
+
+  /* standings */
+  .standings { display: flex; flex-direction: column; gap: 0.4rem; }
+  .srow { display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 0.5rem; border-radius: 10px; cursor: pointer; border: 1px solid transparent; }
+  .srow:hover { border-color: var(--line); }
+  .srow.out { opacity: 0.5; }
+  .srow.out .sname { text-decoration: line-through; }
+  .srow .sname { flex: 1; font-size: 0.92rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .srow .place { font-size: 0.7rem; color: var(--ink-dim); width: 1.5rem; }
+  .srow .slives { font-size: 0.82rem; color: var(--alive); white-space: nowrap; }
+  .srow.out .slives { color: var(--out); }
+
+  .drawer { border: 1px solid var(--line); border-radius: 12px; padding: 0.85rem; margin: 0.2rem 0 0.5rem; background: rgba(6,4,16,0.4); display: flex; flex-direction: column; gap: 0.7rem; }
+  .drawer .lbl { font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); }
+
+  /* sticky footer action */
+  .sticky-bar { position: sticky; bottom: 0; padding: 0.8rem 0 0.2rem; margin-top: 1rem; background: linear-gradient(to top, var(--bg) 55%, transparent); }
+
+  .champ-banner { text-align: center; padding: 1.5rem 1rem; border: 1px solid var(--gold); border-radius: 16px; background: radial-gradient(ellipse at 50% 0%, rgba(230,181,76,0.18), transparent 70%); margin-bottom: 1.25rem; }
+  .champ-banner .crown { font-size: 1.6rem; }
+  .champ-banner .who { font-size: 1.3rem; color: var(--gold); margin-top: 0.4rem; text-shadow: 0 0 18px rgba(230,181,76,0.5); }
+  .champ-banner .lbl { font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-dim); }
+
+  .warn { border: 1px solid var(--out); border-radius: 12px; padding: 0.85rem; background: rgba(248,113,113,0.08); color: var(--ink); font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.7rem; margin-bottom: 0.9rem; }
+
+  /* modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(6,4,16,0.78); backdrop-filter: blur(3px); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+  .modal { width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; background: var(--bg); border: 1px solid var(--purple); border-radius: 16px; padding: 1.2rem; display: flex; flex-direction: column; gap: 0.9rem; box-shadow: 0 0 40px rgba(124,58,237,0.35); }
+  .modal h2 { font-size: 0.95rem; font-weight: 500; letter-spacing: 0.1em; color: var(--purple); }
+  .modal textarea { width: 100%; min-height: 180px; background: rgba(6,4,16,0.6); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font-family: inherit; font-size: 0.78rem; padding: 0.7rem; resize: vertical; }
+  .modal-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  .modal-actions .btn { flex: 1; min-width: 120px; }
+
+  select.text-input { appearance: none; -webkit-appearance: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="top-nav">
+  <a href="index.html">← home</a>
+  <div class="nav-right">
+    <a href="dndndndndndnd.html">dndndndndndnd</a>
+    <a href="wizardwalk.html">wizardwalk</a>
+    <a href="fencing.html" class="active">fencing</a>
+  </div>
+</nav>
+
+<main id="app"></main>
+<div id="modal-root"></div>
+
+<script>
+"use strict";
+(function () {
+  const KEY = 'whims.fencing.v1';
+  const SCHEMA_VERSION = 1;
+  const app = document.getElementById('app');
+  const modalRoot = document.getElementById('modal-root');
+
+  // transient UI state (not persisted)
+  const ui = { menuOpen: false, standingsOpen: false, fencerEdit: null, editRound: false, draft: null, modal: null };
+
+  // ---------------- state ----------------
+  function now() { return Date.now(); }
+
+  function freshState() {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      meta: { name: '', mode: 'unweighted', defaultLives: 3, status: 'setup',
+              champion: null, nextFencerId: 1, createdAt: now(), updatedAt: now() },
+      fencers: [],
+      rounds: [],
+      history: { opponents: {}, byeCount: {} }
+    };
+  }
+
+  let state = load();
+
+  function save() {
+    try {
+      state.meta.updatedAt = now();
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } catch (e) {
+      console.warn('fencing: save failed', e);
+    }
+  }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return freshState();
+      const obj = JSON.parse(raw);
+      if (!obj || obj.schemaVersion !== SCHEMA_VERSION || !Array.isArray(obj.fencers)) return freshState();
+      normalizeState(obj);
+      return obj;
+    } catch (e) {
+      console.warn('fencing: load failed, starting fresh', e);
+      return freshState();
+    }
+  }
+
+  // ---------------- helpers ----------------
+  function newFencerId() { const id = 'f' + state.meta.nextFencerId; state.meta.nextFencerId++; return id; }
+  function fencerById(id) { return state.fencers.find(f => f.id === id); }
+  function aliveFencers() { return state.fencers.filter(f => f.status === 'alive'); }
+  function currentRound() { return state.rounds.length ? state.rounds[state.rounds.length - 1] : null; }
+  function roundComplete(r) { return r && r.pairings.every(p => p.result != null); }
+  function nameOf(id) { const f = fencerById(id); return f ? f.name : '?'; }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function clampLives(n) { n = parseInt(n, 10); if (isNaN(n) || n < 0) return 0; if (n > 999) return 999; return n; }
+  function livesGlyph(n) { return n <= 0 ? '✕' : (n <= 5 ? '♥'.repeat(n) : n + '♥'); }
+
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  // ---------------- invariants ----------------
+  function recomputeHistory(s) {
+    const opp = {}, bye = {};
+    s.fencers.forEach(f => { opp[f.id] = {}; bye[f.id] = 0; });
+    s.rounds.forEach(r => {
+      r.pairings.forEach(p => {
+        if (p.fencerB == null) {
+          if (bye[p.fencerA] != null) bye[p.fencerA]++;
+        } else {
+          if (opp[p.fencerA]) opp[p.fencerA][p.fencerB] = (opp[p.fencerA][p.fencerB] || 0) + 1;
+          if (opp[p.fencerB]) opp[p.fencerB][p.fencerA] = (opp[p.fencerB][p.fencerA] || 0) + 1;
+        }
+      });
+    });
+    s.history = { opponents: opp, byeCount: bye };
+  }
+
+  function renumberEliminations(s) {
+    let maxOrder = 0;
+    s.fencers.forEach(f => { if (f.eliminationOrder) maxOrder = Math.max(maxOrder, f.eliminationOrder); });
+    // give any out fencer missing an order a slot at the end
+    s.fencers.forEach(f => {
+      if (f.status === 'out' && f.eliminationOrder == null) f.eliminationOrder = ++maxOrder;
+      if (f.status === 'alive') f.eliminationOrder = null;
+    });
+    const out = s.fencers.filter(f => f.status === 'out')
+      .sort((a, b) => a.eliminationOrder - b.eliminationOrder);
+    out.forEach((f, i) => { f.eliminationOrder = i + 1; });
+  }
+
+  function normalizeState(s) {
+    s.meta = s.meta || {};
+    if (s.meta.defaultLives == null) s.meta.defaultLives = 3;
+    if (s.meta.nextFencerId == null) {
+      let mx = 0; s.fencers.forEach(f => { const n = parseInt(String(f.id).slice(1), 10); if (!isNaN(n)) mx = Math.max(mx, n); });
+      s.meta.nextFencerId = mx + 1;
+    }
+    s.rounds = s.rounds || [];
+    s.fencers.forEach(f => {
+      if (f.startingLives == null) f.startingLives = s.meta.defaultLives;
+      if (s.meta.status === 'setup') return; // setup fencers have no live fields yet
+      if (f.currentLives == null) f.currentLives = f.startingLives;
+      f.currentLives = clampLives(f.currentLives);
+      f.status = f.currentLives > 0 ? 'alive' : 'out';
+    });
+    if (s.meta.status !== 'setup') {
+      renumberEliminations(s);
+      recomputeHistory(s);
+    }
+  }
+
+  // ---------------- lives / results ----------------
+  function syncAfterLives() {
+    let maxOrder = 0;
+    state.fencers.forEach(f => { if (f.eliminationOrder) maxOrder = Math.max(maxOrder, f.eliminationOrder); });
+    state.fencers.forEach(f => {
+      if (f.currentLives <= 0) {
+        if (f.status !== 'out') { f.status = 'out'; f.eliminationOrder = ++maxOrder; }
+      } else {
+        if (f.status !== 'alive') { f.status = 'alive'; f.eliminationOrder = null; }
+      }
+    });
+    renumberEliminations(state);
+  }
+
+  function applyResult(p) {
+    p.applied = {};
+    const lose = id => { const f = fencerById(id); if (!f) return; const before = f.currentLives; f.currentLives = clampLives(f.currentLives - 1); p.applied[id] = before - f.currentLives; };
+    if (p.result === 'A') lose(p.fencerB);
+    else if (p.result === 'B') lose(p.fencerA);
+    else if (p.result === 'double') { lose(p.fencerA); lose(p.fencerB); }
+    syncAfterLives();
+  }
+
+  function revertResult(p) {
+    if (p.applied) {
+      Object.keys(p.applied).forEach(id => { const f = fencerById(id); if (f) f.currentLives = clampLives(f.currentLives + p.applied[id]); });
+      p.applied = null;
+    }
+    p.result = null;
+    syncAfterLives();
+  }
+
+  // ---------------- pairing engine ----------------
+  function generatePairings() {
+    recomputeHistory(state);
+    const opp = state.history.opponents;
+    const bye = state.history.byeCount;
+    let pool = aliveFencers().map(f => f.id);
+    let byeFencer = null;
+
+    if (pool.length % 2 === 1) {
+      // reduce (not Math.min.apply) so this is safe for an unbounded roster size
+      const minBye = pool.reduce((m, id) => Math.min(m, bye[id] || 0), Infinity);
+      const cands = pool.filter(id => (bye[id] || 0) === minBye);
+      byeFencer = cands[Math.floor(Math.random() * cands.length)];
+      pool = pool.filter(id => id !== byeFencer);
+    }
+
+    const fought = (a, b) => !!((opp[a] || {})[b]);
+    const freshCount = id => pool.filter(g => g !== id && !fought(id, g)).length;
+
+    // most-constrained first, ties random
+    pool = shuffle(pool).sort((a, b) => freshCount(a) - freshCount(b));
+
+    const used = new Set();
+    const pairings = [];
+    for (const f of pool) {
+      if (used.has(f)) continue;
+      used.add(f);
+      const cands = pool.filter(g => g !== f && !used.has(g));
+      if (!cands.length) continue;
+      const fresh = cands.filter(g => !fought(f, g));
+      let pick;
+      if (fresh.length) {
+        pick = shuffle(fresh).sort((a, b) => freshCount(a) - freshCount(b))[0];
+      } else {
+        pick = shuffle(cands).sort((a, b) => ((opp[f] || {})[a] || 0) - ((opp[f] || {})[b] || 0))[0];
+      }
+      used.add(pick);
+      pairings.push({ A: f, B: pick });
+    }
+
+    // single 2-opt sweep to reduce forced rematches
+    for (let i = 0; i < pairings.length; i++) {
+      for (let j = i + 1; j < pairings.length; j++) {
+        const p = pairings[i], q = pairings[j];
+        const cur = (fought(p.A, p.B) ? 1 : 0) + (fought(q.A, q.B) ? 1 : 0);
+        if (!cur) continue;
+        const opt1 = (fought(p.A, q.B) ? 1 : 0) + (fought(q.A, p.B) ? 1 : 0);
+        const opt2 = (fought(p.A, q.A) ? 1 : 0) + (fought(p.B, q.B) ? 1 : 0);
+        if (opt1 < cur && opt1 <= opt2) { const t = p.B; p.B = q.B; q.B = t; }
+        else if (opt2 < cur) { const t = p.B; p.B = q.A; q.A = t; }
+      }
+    }
+
+    return { byeFencer, pairings };
+  }
+
+  function addRoundFromGen(gen) {
+    const index = state.rounds.length + 1;
+    let n = 1;
+    const pairings = gen.pairings.map(p => ({ id: 'r' + index + 'p' + (n++), fencerA: p.A, fencerB: p.B, result: null, applied: null }));
+    if (gen.byeFencer) pairings.push({ id: 'r' + index + 'p' + (n++), fencerA: gen.byeFencer, fencerB: null, result: 'bye', applied: null });
+    state.rounds.push({ index: index, status: 'open', pairings: pairings });
+  }
+
+  // ---------------- actions ----------------
+  function startTournament() {
+    // drop unnamed fencers
+    state.fencers = state.fencers.filter(f => (f.name || '').trim().length);
+    state.fencers.forEach(f => {
+      f.name = f.name.trim();
+      f.startingLives = state.meta.mode === 'unweighted' ? state.meta.defaultLives : clampLives(f.startingLives || state.meta.defaultLives);
+      if (f.startingLives < 1) f.startingLives = 1;
+      f.currentLives = f.startingLives;
+      f.status = 'alive';
+      f.eliminationOrder = null;
+    });
+    state.meta.status = 'live';
+    state.meta.champion = null;
+    state.rounds = [];
+    addRoundFromGen(generatePairings());
+    ui.standingsOpen = false; ui.fencerEdit = null;
+    save(); render();
+  }
+
+  function bulkAdd() {
+    const ta = document.getElementById('bulk-ta');
+    if (!ta) return;
+    const names = ta.value.split(/[\n,]/).map(s => s.trim()).filter(s => s.length);
+    names.forEach(n => state.fencers.push({ id: newFencerId(), name: n, startingLives: state.meta.defaultLives }));
+    ui.modal = null;
+    save(); render();
+  }
+
+  function recordResult(pid, result) {
+    const r = currentRound();
+    const p = r && r.pairings.find(x => x.id === pid);
+    if (!p || p.fencerB == null) return;
+    revertResult(p);
+    p.result = result;
+    applyResult(p);
+    save(); render();
+  }
+
+  function undoResult(pid) {
+    const r = currentRound();
+    const p = r && r.pairings.find(x => x.id === pid);
+    if (!p || p.fencerB == null) return;
+    revertResult(p);
+    save(); render();
+  }
+
+  function advanceRound() {
+    const r = currentRound();
+    if (!roundComplete(r)) return;
+    const alive = aliveFencers();
+    if (alive.length <= 1) { finishTournament(); return; }
+    r.status = 'complete';
+    addRoundFromGen(generatePairings());
+    ui.editRound = false; ui.draft = null;
+    save(); render();
+  }
+
+  function finishTournament() {
+    const alive = aliveFencers();
+    state.meta.status = 'finished';
+    state.meta.champion = alive.length === 1 ? alive[0].id : null;
+    const r = currentRound(); if (r) r.status = 'complete';
+    save(); render();
+  }
+
+  function setLives(id, val) {
+    const f = fencerById(id); if (!f) return;
+    f.currentLives = clampLives(val);
+    syncAfterLives();
+    save();
+  }
+
+  function eliminateFencer(id) {
+    const f = fencerById(id); if (!f) return;
+    f.currentLives = 0; syncAfterLives(); save(); render();
+  }
+  function reviveFencer(id) {
+    const f = fencerById(id); if (!f) return;
+    if (f.currentLives <= 0) f.currentLives = 1;
+    syncAfterLives();
+    if (state.meta.status === 'finished') state.meta.status = 'live';
+    save(); render();
+  }
+  function addFencerLive() {
+    const f = { id: newFencerId(), name: 'New fencer', startingLives: state.meta.defaultLives, currentLives: Math.max(1, state.meta.defaultLives), status: 'alive', eliminationOrder: null };
+    state.fencers.push(f);
+    ui.standingsOpen = true; ui.fencerEdit = f.id;
+    save(); render();
+  }
+  function deleteFencer(id) {
+    state.fencers = state.fencers.filter(f => f.id !== id);
+    // strip from any pairings + revert their applied deltas
+    state.rounds.forEach(r => {
+      r.pairings = r.pairings.filter(p => {
+        if (p.fencerA === id || p.fencerB === id) { return false; }
+        return true;
+      });
+    });
+    if (ui.fencerEdit === id) ui.fencerEdit = null;
+    normalizeState(state);
+    save(); render();
+  }
+
+  // ---- manual pairing edit ----
+  function enterEditRound() {
+    const r = currentRound(); if (!r) return;
+    ui.draft = r.pairings.map(p => ({ A: p.fencerA, B: p.fencerB }));
+    ui.editRound = true;
+    render();
+  }
+  function autoFillDraft() {
+    const gen = generatePairings();
+    ui.draft = gen.pairings.map(p => ({ A: p.A, B: p.B }));
+    if (gen.byeFencer) ui.draft.push({ A: gen.byeFencer, B: null });
+    render();
+  }
+  function draftValidation() {
+    const alive = aliveFencers().map(f => f.id);
+    const seen = [];
+    let byes = 0;
+    for (const pr of ui.draft) {
+      if (pr.A) seen.push(pr.A);
+      if (pr.B) seen.push(pr.B); else if (pr.A) byes++;
+    }
+    const set = new Set(seen);
+    if (set.size !== seen.length) return 'Each fencer can only appear once.';
+    for (const id of alive) if (!set.has(id)) return 'Missing: ' + nameOf(id) + '.';
+    for (const id of seen) if (!alive.includes(id)) return 'Includes an eliminated fencer.';
+    if (byes > 1) return 'Only one fencer can have a bye.';
+    return null;
+  }
+  function saveEditRound() {
+    const err = draftValidation();
+    if (err) { ui.draftError = err; render(); return; }
+    const r = currentRound();
+    r.pairings.forEach(p => revertResult(p)); // clear recorded results / life deltas
+    const index = r.index; let n = 1;
+    r.pairings = ui.draft.filter(pr => pr.A).map(pr => ({
+      id: 'r' + index + 'p' + (n++), fencerA: pr.A, fencerB: pr.B || null,
+      result: pr.B ? null : 'bye', applied: null
+    }));
+    recomputeHistory(state);
+    ui.editRound = false; ui.draft = null; ui.draftError = null;
+    save(); render();
+  }
+
+  function resetTournament() {
+    state = freshState();
+    ui.menuOpen = false; ui.fencerEdit = null; ui.standingsOpen = false;
+    save(); render();
+  }
+  function rematchSameFencers() {
+    state.rounds = [];
+    state.meta.status = 'setup';
+    state.meta.champion = null;
+    state.fencers.forEach(f => { f.currentLives = null; f.status = 'alive'; f.eliminationOrder = null; });
+    ui.menuOpen = false;
+    save(); render();
+  }
+
+  // ---------------- import / export ----------------
+  function exportText() { return JSON.stringify(state, null, 2); }
+  function doDownload() {
+    try {
+      const blob = new Blob([exportText()], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const nm = (state.meta.name || 'tournament').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+      const date = new Date().toISOString().slice(0, 10);
+      a.href = url; a.download = 'fencing-' + nm + '-' + date + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { alert('Download failed: ' + e.message); }
+  }
+  function doCopy() {
+    const txt = exportText();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(() => flashCopy(), () => fallbackCopy(txt));
+    } else fallbackCopy(txt);
+  }
+  function fallbackCopy(txt) {
+    const ta = document.getElementById('export-ta');
+    if (ta) { ta.focus(); ta.select(); try { document.execCommand('copy'); flashCopy(); } catch (e) {} }
+  }
+  function flashCopy() { const b = document.getElementById('copy-btn'); if (b) { b.textContent = 'copied ✓'; setTimeout(() => { if (b) b.textContent = 'copy'; }, 1500); } }
+
+  function tryImport(text) {
+    let obj;
+    try { obj = JSON.parse(text); } catch (e) { return 'Not valid JSON.'; }
+    if (!obj || typeof obj !== 'object' || !Array.isArray(obj.fencers) || !obj.meta) return 'Not a fencing tournament file.';
+    if (obj.schemaVersion !== SCHEMA_VERSION) return 'Unsupported file version (' + obj.schemaVersion + ').';
+    normalizeState(obj);
+    state = obj;
+    ui.modal = null; ui.fencerEdit = null; ui.menuOpen = false;
+    save(); render();
+    return null;
+  }
+
+  // ---------------- rendering ----------------
+  function render() {
+    if (state.meta.status === 'setup') renderSetup();
+    else if (state.meta.status === 'finished') renderFinished();
+    else renderLive();
+    renderModal();
+  }
+
+  function stepperHTML(action, id, value, min) {
+    return '<div class="stepper">'
+      + '<button data-action="' + action + '-dec" data-id="' + (id || '') + '">−</button>'
+      + '<input class="num-input" inputmode="numeric" data-bind="' + action + '" data-id="' + (id || '') + '" value="' + value + '">'
+      + '<button data-action="' + action + '-inc" data-id="' + (id || '') + '">+</button>'
+      + '</div>';
+  }
+
+  // ---- setup ----
+  function renderSetup() {
+    const m = state.meta;
+    const weighted = m.mode === 'weighted';
+    const rows = state.fencers.map(f =>
+      '<div class="frow">'
+      + '<input class="text-input" data-bind="rename" data-id="' + f.id + '" value="' + esc(f.name) + '" placeholder="name" autocapitalize="words" autocomplete="off">'
+      + (weighted ? stepperHTML('startlife', f.id, clampLives(f.startingLives || m.defaultLives), 1) : '')
+      + '<button class="x" data-action="remove-fencer" data-id="' + f.id + '" aria-label="remove">×</button>'
+      + '</div>'
+    ).join('');
+
+    const named = state.fencers.filter(f => (f.name || '').trim().length).length;
+
+    app.innerHTML =
+      '<h1 class="page-title">⚔ tournament setup</h1>'
+      + '<section class="panel">'
+      + '<label class="field"><span>tournament name</span>'
+      + '<input class="text-input" data-bind="name" value="' + esc(m.name) + '" placeholder="Thursday practice" autocapitalize="words" autocomplete="off"></label>'
+
+      + '<div class="field"><span>mode</span>'
+      + '<div class="segmented">'
+      + '<button data-action="set-mode" data-mode="unweighted" class="' + (!weighted ? 'on' : '') + '">unweighted</button>'
+      + '<button data-action="set-mode" data-mode="weighted" class="' + (weighted ? 'on' : '') + '">weighted</button>'
+      + '</div>'
+      + '<p class="hint">' + (weighted
+          ? 'Each fencer starts with the lives you set — more lives = more chances to prove yourself.'
+          : 'Everyone starts with the same number of lives.') + '</p></div>'
+
+      + (!weighted
+          ? '<div class="field"><span>starting lives (everyone)</span>' + stepperHTML('deflife', '', m.defaultLives, 1) + '</div>'
+          : '')
+
+      + '<div class="field"><span>fencers · ' + named + '</span>'
+      + '<div class="fencer-rows">' + rows + '</div>'
+      + '<div class="row wrap"><button class="btn ghost" data-action="add-fencer-setup">+ add fencer</button>'
+      + '<button class="btn ghost" data-action="open-bulk">paste a list</button></div></div>'
+
+      + '<button class="btn primary big" data-action="start" ' + (named >= 2 ? '' : 'disabled') + '>start tournament →</button>'
+      + '<button class="btn ghost" data-action="open-import">import a saved tournament</button>'
+      + '</section>';
+  }
+
+  // ---- live ----
+  function renderLive() {
+    const m = state.meta;
+    const r = currentRound();
+    const aliveCount = aliveFencers().length;
+    const doubleKO = aliveCount === 0;
+
+    let html =
+      '<div class="lv-head">'
+      + '<div class="title-wrap">'
+      + '<input class="lv-name" data-bind="name" value="' + esc(m.name) + '" placeholder="untitled tournament" autocapitalize="words" autocomplete="off">'
+      + '<span class="lv-sub">round ' + (r ? r.index : 0) + ' · ' + aliveCount + ' still in · ' + (m.mode) + '</span>'
+      + '</div>'
+      + '<button class="menu-btn" data-action="toggle-menu" aria-label="menu">⋯</button>'
+      + '</div>';
+
+    if (ui.menuOpen) {
+      html += '<div class="menu">'
+        + '<button class="btn ghost" data-action="open-export">export / back up</button>'
+        + '<button class="btn ghost" data-action="open-import">import</button>'
+        + '<button class="btn danger" data-action="confirm-reset">reset tournament</button>'
+        + '</div>';
+    }
+
+    if (doubleKO) {
+      html += '<div class="warn"><div>⚠ The last bout eliminated everyone still in (a double). Choose how to resolve it:</div>'
+        + '<div class="row wrap">'
+        + '<button class="btn" data-action="undo-last">undo &amp; replay last bout</button>'
+        + '<button class="btn primary" data-action="finish">declare co-champions</button>'
+        + '</div></div>';
+    }
+
+    // round card
+    html += '<div class="card"><div class="card-title"><span>round ' + (r ? r.index : 0) + '</span>'
+      + (ui.editRound ? '' : '<button class="btn tiny ghost" data-action="edit-round">edit pairings</button>') + '</div>';
+
+    if (ui.editRound) html += renderEditRound();
+    else html += renderBouts(r);
+
+    html += '</div>';
+
+    // standings
+    html += '<div class="card" style="margin-top:1rem">'
+      + '<div class="card-title"><button class="btn tiny ghost" data-action="toggle-standings">'
+      + (ui.standingsOpen ? '▾ hide fencers' : '▸ fencers &amp; lives') + '</button>'
+      + '<button class="btn tiny" data-action="add-fencer-live">+ add</button></div>';
+    if (ui.standingsOpen) html += renderStandings();
+    html += '</div>';
+
+    // sticky advance
+    if (!ui.editRound) {
+      const done = roundComplete(r);
+      const label = aliveCount <= 1 ? 'see results →' : 'next round →';
+      html += '<div class="sticky-bar"><button class="btn primary big" style="width:100%" data-action="advance" ' + (done && !doubleKO ? '' : 'disabled') + '>' + label + '</button></div>';
+    }
+
+    app.innerHTML = html;
+  }
+
+  function renderBouts(r) {
+    if (!r) return '<p class="hint">No round yet.</p>';
+    return '<div class="bouts">' + r.pairings.map(p => {
+      if (p.fencerB == null) {
+        return '<div class="bout"><div class="bye-chip">🛡 <b>' + esc(nameOf(p.fencerA)) + '</b> sits out this round (bye)</div></div>';
+      }
+      const a = fencerById(p.fencerA), b = fencerById(p.fencerB);
+      const head = '<div class="bout-fencers">'
+        + '<span class="bn">' + esc(a ? a.name : '?') + ' <span class="lives">' + livesGlyph(a ? a.currentLives : 0) + '</span></span>'
+        + '<span class="vs">vs</span>'
+        + '<span class="bn">' + esc(b ? b.name : '?') + ' <span class="lives">' + livesGlyph(b ? b.currentLives : 0) + '</span></span>'
+        + '</div>';
+      if (p.result == null) {
+        return '<div class="bout">' + head
+          + '<div class="result-btns">'
+          + '<button class="btn win" data-action="result" data-pid="' + p.id + '" data-r="A">' + esc(a ? a.name : 'A') + ' won</button>'
+          + '<button class="btn draw" data-action="result" data-pid="' + p.id + '" data-r="double">double</button>'
+          + '<button class="btn win" data-action="result" data-pid="' + p.id + '" data-r="B">' + esc(b ? b.name : 'B') + ' won</button>'
+          + '</div></div>';
+      }
+      let res;
+      if (p.result === 'A') res = '✓ ' + esc(a ? a.name : 'A') + ' won';
+      else if (p.result === 'B') res = '✓ ' + esc(b ? b.name : 'B') + ' won';
+      else res = '⚔ double — both −1';
+      return '<div class="bout done">' + head
+        + '<div class="bout-summary"><span class="res">' + res + '</span>'
+        + '<button class="btn tiny ghost" data-action="undo-result" data-pid="' + p.id + '">undo</button></div></div>';
+    }).join('') + '</div>';
+  }
+
+  function renderStandings() {
+    const ranked = state.fencers.slice().sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'alive' ? -1 : 1;
+      if (a.status === 'out') return (a.eliminationOrder || 0) > (b.eliminationOrder || 0) ? -1 : 1;
+      return b.currentLives - a.currentLives;
+    });
+    return '<div class="standings">' + ranked.map(f => {
+      const editing = ui.fencerEdit === f.id;
+      let row = '<div class="srow ' + (f.status === 'out' ? 'out' : '') + '" data-action="edit-fencer" data-id="' + f.id + '">'
+        + '<span class="place">' + (f.status === 'out' ? '#' + (state.fencers.filter(x => x.status === 'out').length - f.eliminationOrder + 1) : '•') + '</span>'
+        + '<span class="sname">' + esc(f.name) + '</span>'
+        + '<span class="slives">' + (f.status === 'out' ? 'out' : f.currentLives + '♥') + '</span>'
+        + '</div>';
+      if (editing) row += renderDrawer(f);
+      return row;
+    }).join('') + '</div>';
+  }
+
+  function renderDrawer(f) {
+    return '<div class="drawer">'
+      + '<input class="text-input" data-bind="rename" data-id="' + f.id + '" value="' + esc(f.name) + '" autocapitalize="words" autocomplete="off">'
+      + '<div class="row" style="justify-content:space-between"><span class="lbl">lives</span>' + stepperHTML('curlife', f.id, f.currentLives == null ? 0 : f.currentLives, 0) + '</div>'
+      + '<div class="row wrap">'
+      + (f.status === 'out'
+          ? '<button class="btn tiny" data-action="revive" data-id="' + f.id + '">revive</button>'
+          : '<button class="btn tiny danger" data-action="eliminate" data-id="' + f.id + '">eliminate</button>')
+      + '<button class="btn tiny danger" data-action="delete-fencer" data-id="' + f.id + '">delete</button>'
+      + '<button class="btn tiny ghost" data-action="close-fencer" data-id="' + f.id + '">done</button>'
+      + '</div></div>';
+  }
+
+  function renderEditRound() {
+    const alive = aliveFencers();
+    const optionList = (sel, allowBye) => {
+      let o = '';
+      if (allowBye) o += '<option value="" ' + (!sel ? 'selected' : '') + '>— bye —</option>';
+      else o += '<option value="">—</option>';
+      alive.forEach(f => { o += '<option value="' + f.id + '" ' + (sel === f.id ? 'selected' : '') + '>' + esc(f.name) + '</option>'; });
+      return o;
+    };
+    let html = '<p class="hint" style="margin-bottom:.7rem">Pick who fights whom. Each fencer appears once; one may sit out (bye). Saving clears any results already recorded this round.</p>';
+    html += '<div class="bouts">';
+    ui.draft.forEach((pr, i) => {
+      html += '<div class="bout"><div class="row" style="gap:.4rem">'
+        + '<select class="text-input" data-draft="' + i + '" data-role="A">' + optionList(pr.A, false) + '</select>'
+        + '<span class="vs">vs</span>'
+        + '<select class="text-input" data-draft="' + i + '" data-role="B">' + optionList(pr.B, true) + '</select>'
+        + '<button class="x" data-action="draft-remove" data-i="' + i + '">×</button>'
+        + '</div></div>';
+    });
+    html += '</div>';
+    if (ui.draftError) html += '<p class="hint" style="color:var(--out)">' + esc(ui.draftError) + '</p>';
+    html += '<div class="row wrap" style="margin-top:.8rem">'
+      + '<button class="btn tiny ghost" data-action="draft-add">+ add bout</button>'
+      + '<button class="btn tiny ghost" data-action="draft-auto">auto-pair</button>'
+      + '<button class="btn tiny" data-action="draft-cancel">cancel</button>'
+      + '<button class="btn tiny primary" data-action="draft-save">save pairings</button>'
+      + '</div>';
+    return html;
+  }
+
+  // ---- finished ----
+  function renderFinished() {
+    const ranked = state.fencers.slice().sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'alive' ? -1 : 1;
+      if (a.status === 'out') return (b.eliminationOrder || 0) - (a.eliminationOrder || 0);
+      return 0;
+    });
+    const champs = state.fencers.filter(f => f.status === 'alive');
+    let banner;
+    if (champs.length === 1) {
+      banner = '<div class="champ-banner"><div class="crown">👑</div><div class="lbl">champion</div><div class="who">' + esc(champs[0].name) + '</div></div>';
+    } else if (champs.length === 0) {
+      const top = ranked.slice(0, 2).map(f => esc(f.name)).join(' & ');
+      banner = '<div class="champ-banner"><div class="crown">🤝</div><div class="lbl">co-champions</div><div class="who">' + top + '</div></div>';
+    } else {
+      banner = '<div class="champ-banner"><div class="crown">⚔</div><div class="lbl">still standing</div><div class="who">' + champs.map(f => esc(f.name)).join(' & ') + '</div></div>';
+    }
+
+    let list = '<div class="card"><div class="card-title"><span>final standings</span></div><div class="standings">';
+    ranked.forEach((f, i) => {
+      list += '<div class="srow ' + (f.status === 'out' ? 'out' : '') + '">'
+        + '<span class="place">' + (i + 1) + '</span>'
+        + '<span class="sname">' + esc(f.name) + '</span>'
+        + '<span class="slives">' + (f.status === 'alive' ? f.currentLives + '♥' : 'out') + '</span>'
+        + '</div>';
+    });
+    list += '</div></div>';
+
+    app.innerHTML =
+      '<h1 class="page-title">⚔ ' + esc(state.meta.name || 'tournament') + '</h1>'
+      + banner + list
+      + '<div class="row wrap" style="margin-top:1.2rem">'
+      + '<button class="btn" data-action="open-export">export results</button>'
+      + '<button class="btn" data-action="rematch">rematch (same fencers)</button>'
+      + '<button class="btn danger" data-action="confirm-reset">new tournament</button>'
+      + '</div>'
+      + '<p class="hint" style="margin-top:.8rem">Need to fix something? Reopen the bracket by reviving a fencer from a fresh round — or rematch with the same roster.</p>';
+  }
+
+  // ---- modal ----
+  function renderModal() {
+    if (!ui.modal) { modalRoot.innerHTML = ''; return; }
+    let inner = '';
+    if (ui.modal === 'export') {
+      inner = '<h2>export tournament</h2>'
+        + '<textarea id="export-ta" readonly>' + esc(exportText()) + '</textarea>'
+        + '<div class="modal-actions">'
+        + '<button class="btn" id="copy-btn" data-action="do-copy">copy</button>'
+        + '<button class="btn" data-action="do-download">download .json</button>'
+        + '<button class="btn ghost" data-action="close-modal">close</button>'
+        + '</div>';
+    } else if (ui.modal === 'import') {
+      inner = '<h2>import tournament</h2>'
+        + '<p class="hint">Paste exported JSON below, or choose a file. This replaces the current tournament.</p>'
+        + '<textarea id="import-ta" placeholder="paste tournament JSON here"></textarea>'
+        + (ui.modalError ? '<p class="hint" style="color:var(--out)">' + esc(ui.modalError) + '</p>' : '')
+        + '<input type="file" id="import-file" accept="application/json,.json" class="hint">'
+        + '<div class="modal-actions">'
+        + '<button class="btn primary" data-action="do-import">load</button>'
+        + '<button class="btn ghost" data-action="close-modal">cancel</button>'
+        + '</div>';
+    } else if (ui.modal === 'bulk') {
+      inner = '<h2>add a list of fencers</h2>'
+        + '<p class="hint">One name per line (or comma-separated). Adds them all at once — handy for big rosters.</p>'
+        + '<textarea id="bulk-ta" placeholder="Alice&#10;Bob&#10;Cara&#10;..."></textarea>'
+        + '<div class="modal-actions">'
+        + '<button class="btn primary" data-action="do-bulk">add these</button>'
+        + '<button class="btn ghost" data-action="close-modal">cancel</button>'
+        + '</div>';
+    } else if (ui.modal === 'reset') {
+      inner = '<h2>reset tournament?</h2>'
+        + '<p class="hint">This clears all fencers, rounds and lives and returns to setup. This cannot be undone.</p>'
+        + '<div class="modal-actions">'
+        + '<button class="btn danger" data-action="do-reset">yes, reset everything</button>'
+        + '<button class="btn ghost" data-action="close-modal">cancel</button>'
+        + '</div>';
+    }
+    modalRoot.innerHTML = '<div class="modal-bg" data-action="modal-bg"><div class="modal">' + inner + '</div></div>';
+  }
+
+  // ---------------- event handling ----------------
+  function handleAction(action, ds) {
+    switch (action) {
+      // setup
+      case 'set-mode': state.meta.mode = ds.mode; save(); render(); break;
+      case 'add-fencer-setup': state.fencers.push({ id: newFencerId(), name: '', startingLives: state.meta.defaultLives }); save(); render(); break;
+      case 'open-bulk': ui.modal = 'bulk'; render(); break;
+      case 'do-bulk': bulkAdd(); break;
+      case 'remove-fencer': state.fencers = state.fencers.filter(f => f.id !== ds.id); save(); render(); break;
+      case 'start': startTournament(); break;
+      case 'deflife-inc': state.meta.defaultLives = clampLives(state.meta.defaultLives + 1) || 1; save(); render(); break;
+      case 'deflife-dec': state.meta.defaultLives = Math.max(1, clampLives(state.meta.defaultLives - 1)); save(); render(); break;
+      case 'startlife-inc': { const f = fencerById(ds.id); if (f) { f.startingLives = clampLives((f.startingLives || 1) + 1) || 1; save(); render(); } break; }
+      case 'startlife-dec': { const f = fencerById(ds.id); if (f) { f.startingLives = Math.max(1, clampLives((f.startingLives || 1) - 1)); save(); render(); } break; }
+
+      // live
+      case 'toggle-menu': ui.menuOpen = !ui.menuOpen; render(); break;
+      case 'result': recordResult(ds.pid, ds.r); break;
+      case 'undo-result': undoResult(ds.pid); break;
+      case 'undo-last': undoLastResolved(); break;
+      case 'advance': advanceRound(); break;
+      case 'finish': finishTournament(); break;
+      case 'toggle-standings': ui.standingsOpen = !ui.standingsOpen; render(); break;
+      case 'edit-fencer': ui.fencerEdit = ui.fencerEdit === ds.id ? null : ds.id; render(); break;
+      case 'close-fencer': ui.fencerEdit = null; render(); break;
+      case 'curlife-inc': { const f = fencerById(ds.id); if (f) { setLives(ds.id, (f.currentLives || 0) + 1); render(); } break; }
+      case 'curlife-dec': { const f = fencerById(ds.id); if (f) { setLives(ds.id, (f.currentLives || 0) - 1); render(); } break; }
+      case 'eliminate': eliminateFencer(ds.id); break;
+      case 'revive': reviveFencer(ds.id); break;
+      case 'add-fencer-live': addFencerLive(); break;
+      case 'delete-fencer': deleteFencer(ds.id); break;
+
+      // edit round
+      case 'edit-round': enterEditRound(); break;
+      case 'draft-add': ui.draft.push({ A: '', B: '' }); render(); break;
+      case 'draft-remove': ui.draft.splice(parseInt(ds.i, 10), 1); render(); break;
+      case 'draft-auto': autoFillDraft(); break;
+      case 'draft-cancel': ui.editRound = false; ui.draft = null; ui.draftError = null; render(); break;
+      case 'draft-save': saveEditRound(); break;
+
+      // modals / menu
+      case 'open-export': ui.modal = 'export'; ui.menuOpen = false; render(); break;
+      case 'open-import': ui.modal = 'import'; ui.modalError = null; ui.menuOpen = false; render(); break;
+      case 'confirm-reset': ui.modal = 'reset'; ui.menuOpen = false; render(); break;
+      case 'do-reset': resetTournament(); break;
+      case 'do-copy': doCopy(); break;
+      case 'do-download': doDownload(); break;
+      case 'do-import': { const ta = document.getElementById('import-ta'); const err = tryImport(ta ? ta.value : ''); if (err) { ui.modalError = err; render(); } break; }
+      case 'close-modal': ui.modal = null; ui.modalError = null; render(); break;
+      case 'modal-bg': break; // handled by target check below
+      case 'rematch': rematchSameFencers(); break;
+    }
+  }
+
+  function undoLastResolved() {
+    const r = currentRound(); if (!r) return;
+    for (let i = r.pairings.length - 1; i >= 0; i--) {
+      const p = r.pairings[i];
+      if (p.fencerB != null && p.result != null) { revertResult(p); save(); render(); return; }
+    }
+  }
+
+  // click delegation
+  document.addEventListener('click', e => {
+    const bg = e.target.closest('[data-action="modal-bg"]');
+    if (bg && e.target === bg) { ui.modal = null; ui.modalError = null; render(); return; }
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    if (btn.dataset.action === 'modal-bg') return;
+    e.stopPropagation();
+    handleAction(btn.dataset.action, btn.dataset);
+  });
+
+  // text input (no re-render → keeps focus)
+  document.addEventListener('input', e => {
+    const t = e.target;
+    const bind = t.dataset && t.dataset.bind;
+    if (!bind) return;
+    if (bind === 'name') { state.meta.name = t.value; save(); }
+    else if (bind === 'rename') { const f = fencerById(t.dataset.id); if (f) { f.name = t.value; save(); } }
+    else if (bind === 'deflife') { state.meta.defaultLives = clampLives(t.value) || 1; save(); }
+    else if (bind === 'startlife') { const f = fencerById(t.dataset.id); if (f) { f.startingLives = clampLives(t.value); save(); } }
+    else if (bind === 'curlife') { const f = fencerById(t.dataset.id); if (f) { f.currentLives = clampLives(t.value); save(); } }
+  });
+
+  // commit life-number edits on blur so status/elimination updates
+  document.addEventListener('blur', e => {
+    const t = e.target;
+    if (t.dataset && t.dataset.bind === 'curlife') { syncAfterLives(); save(); render(); }
+  }, true);
+
+  // draft selects
+  document.addEventListener('change', e => {
+    const t = e.target;
+    if (t.dataset && t.dataset.draft != null) {
+      const i = parseInt(t.dataset.draft, 10);
+      if (ui.draft && ui.draft[i]) { ui.draft[i][t.dataset.role] = t.value || (t.dataset.role === 'B' ? null : ''); ui.draftError = null; }
+      return;
+    }
+    if (t.id === 'import-file' && t.files && t.files[0]) {
+      const reader = new FileReader();
+      reader.onload = () => { const err = tryImport(String(reader.result)); if (err) { ui.modalError = err; render(); } };
+      reader.readAsText(t.files[0]);
+    }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
