@@ -137,6 +137,7 @@
     font-size: 1rem;
     padding: 0.7rem 0.8rem;
     width: 100%;
+    text-overflow: ellipsis;
   }
   .text-input:focus, .num-input:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 2px rgba(168,85,247,0.25); }
   .num-input { width: 3.4rem; text-align: center; padding: 0.7rem 0.4rem; }
@@ -966,7 +967,7 @@
       '<h1 class="page-title">⚔ tournament setup</h1>'
       + '<section class="panel">'
       + '<label class="field"><span>tournament name</span>'
-      + '<input class="text-input" data-bind="name" value="' + esc(m.name) + '" placeholder="Thursday practice" autocapitalize="words" autocomplete="off"></label>'
+      + '<input class="text-input" data-bind="name" value="' + esc(m.name) + '" placeholder="1v1 final destination fox only no items 4 stocks 8 minutes GO!" autocapitalize="words" autocomplete="off"></label>'
 
       + '<div class="field"><span>format</span>'
       + '<div class="segmented">'
