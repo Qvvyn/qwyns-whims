@@ -251,6 +251,8 @@
   .hbout { font-size: 0.82rem; line-height: 1.85; color: var(--ink); }
   .hbout b { color: var(--purple); }
   .hbout .pend { color: var(--ink-dim); }
+  .srow.qual { background: rgba(124, 58, 237, 0.1); border-color: var(--line); }
+  .srow.qual .place { color: var(--purple); }
 
   .rkchip { min-width: 3.2rem; text-align: center; }
   .rktag { font-size: 0.58rem; letter-spacing: 0.06em; padding: 0.05rem 0.3rem; border: 1px solid; border-radius: 6px; vertical-align: middle; }
@@ -326,6 +328,7 @@
     'curlife-inc', 'curlife-dec', 'eliminate', 'revive', 'add-fencer-live', 'delete-fencer',
     'draft-save', 'do-reset', 'do-import', 'do-bulk', 'rematch',
     'set-format', 'numpools-inc', 'numpools-dec', 'advance-inc', 'advance-dec', 'cycle-rank',
+    'ranklife-inc', 'ranklife-dec', 'guarantee-inc', 'guarantee-dec',
     'pool-result', 'pool-undo-result', 'advance-to-bracket', 'reshuffle-pools'
   ]);
 
@@ -337,6 +340,7 @@
       schemaVersion: SCHEMA_VERSION,
       meta: { name: '', mode: 'unweighted', defaultLives: 3, status: 'setup',
               format: 'lives', phase: null, numPools: 2, advanceCount: 8,
+              rankLives: { 'N/A': 4, 'OSR': 3, 'OGR': 2, 'MoD': 1 }, guaranteePerPool: 0,
               champion: null, nextFencerId: 1, createdAt: now(), updatedAt: now() },
       fencers: [],
       rounds: [],
@@ -450,6 +454,8 @@
     if (s.meta.phase === undefined) s.meta.phase = null;
     if (s.meta.numPools == null) s.meta.numPools = 2;
     if (s.meta.advanceCount == null) s.meta.advanceCount = 8;
+    if (!s.meta.rankLives) s.meta.rankLives = { 'N/A': 4, 'OSR': 3, 'OGR': 2, 'MoD': 1 };
+    if (s.meta.guaranteePerPool == null) s.meta.guaranteePerPool = 0;
     s.pools = s.pools || [];
     if (s.meta.nextFencerId == null) {
       let mx = 0; s.fencers.forEach(f => { const n = parseInt(String(f.id).slice(1), 10); if (!isNaN(n)) mx = Math.max(mx, n); });
@@ -674,15 +680,44 @@
     if (!bt) return;
     bt.result = null; save(); render();
   }
+  function h2h(g, x, y) {
+    const bt = g.bouts.find(b => (b.a === x && b.b === y) || (b.a === y && b.b === x));
+    if (!bt || !bt.result) return 0;
+    const winner = bt.result === 'A' ? bt.a : bt.b;
+    return winner === x ? -1 : 1;
+  }
+  function poolStanding(g) {
+    return g.fencerIds.slice().sort((x, y) => {
+      const w = poolWins(y) - poolWins(x); if (w) return w;
+      const h = h2h(g, x, y); if (h) return h;             // head-to-head tiebreak
+      return (fencerById(x).seed || 0) - (fencerById(y).seed || 0);
+    });
+  }
+  function bracketLivesFor(f) {
+    if (state.meta.mode === 'weighted' && state.meta.format === 'pools') {
+      const v = (state.meta.rankLives || {})[f.rank || 'N/A'];
+      return Math.max(1, clampLives(v != null ? v : state.meta.defaultLives));
+    }
+    return Math.max(1, clampLives(state.meta.defaultLives));
+  }
   function advanceToBracket() {
     if (!poolsComplete()) return;
-    const ranked = overallRanking();
-    const N = Math.max(1, Math.min(state.meta.advanceCount || ranked.length, ranked.length));
+    const overall = overallRanking();
+    const N = Math.max(1, Math.min(state.meta.advanceCount || overall.length, overall.length));
+    const gpp = Math.max(0, state.meta.guaranteePerPool || 0);
+    const guaranteed = new Set();
+    if (gpp > 0) state.pools.forEach(g => poolStanding(g).slice(0, gpp).forEach(id => guaranteed.add(id)));
+    const advancing = [];
+    overall.forEach(f => { if (guaranteed.has(f.id) && advancing.length < N) advancing.push(f.id); });
+    overall.forEach(f => { if (!guaranteed.has(f.id) && advancing.length < N) advancing.push(f.id); });
+    const advSet = new Set(advancing);
+    // non-advancers: out, ranked by reverse overall (worst eliminated first)
     let order = 0;
-    for (let i = ranked.length - 1; i >= N; i--) {
-      const f = ranked[i]; f.currentLives = 0; f.status = 'out'; f.eliminationOrder = ++order;
+    for (let i = overall.length - 1; i >= 0; i--) {
+      const f = overall[i]; if (advSet.has(f.id)) continue;
+      f.currentLives = 0; f.status = 'out'; f.eliminationOrder = ++order;
     }
-    ranked.slice(0, N).forEach(f => { f.currentLives = f.startingLives; f.status = 'alive'; f.eliminationOrder = null; });
+    advancing.forEach(id => { const f = fencerById(id); f.startingLives = bracketLivesFor(f); f.currentLives = f.startingLives; f.status = 'alive'; f.eliminationOrder = null; });
     state.meta.phase = 'bracket';
     state.rounds = [];
     addRoundFromGen(generatePairings());
@@ -929,14 +964,25 @@
           : (weighted ? 'Each fencer starts with the lives you set — more lives = more chances to prove yourself.'
                       : 'Everyone starts with the same number of lives.')) + '</p></div>'
 
-      + ((!weighted || m.format === 'pools')
-          ? '<div class="field"><span>starting lives' + (m.format === 'pools' ? ' (bracket)' : ' (everyone)') + '</span>' + stepperHTML('deflife', '', m.defaultLives, 1) + '</div>'
+      + (!weighted
+          ? '<div class="field"><span>starting lives' + (m.format === 'pools' ? ' (bracket, everyone)' : ' (everyone)') + '</span>' + stepperHTML('deflife', '', m.defaultLives, 1) + '</div>'
+          : '')
+
+      + (m.format === 'pools' && weighted
+          ? '<div class="field"><span>bracket lives by rank</span>'
+            + RANK_ORDER.map(rk => '<div class="row" style="justify-content:space-between"><span class="rktag rk-' + rk.replace('/', '') + '">' + rk + '</span>'
+                + stepperHTML('ranklife', rk, (m.rankLives && m.rankLives[rk] != null ? m.rankLives[rk] : m.defaultLives), 1) + '</div>').join('')
+            + '<p class="hint">Lower ranks get more lives — more chances to prove themselves.</p></div>'
           : '')
 
       + (m.format === 'pools'
           ? '<div class="field"><span>number of pools</span>' + stepperHTML('numpools', '', m.numPools, 1)
             + '<p class="hint">' + poolPreview() + '</p></div>'
             + '<div class="field"><span>advance to bracket · top N overall</span>' + stepperHTML('advance', '', m.advanceCount, 1) + '</div>'
+            + '<div class="field"><span>guarantee top N per pool</span>' + stepperHTML('guarantee', '', m.guaranteePerPool || 0, 0)
+            + '<p class="hint">' + ((m.guaranteePerPool || 0) > 0
+                ? 'Top ' + m.guaranteePerPool + ' of every pool advance automatically; remaining slots go to the best records overall.'
+                : 'Pure overall cut — best records across all pools advance.') + '</p></div>'
           : '')
 
       + '<div class="field"><span>fencers · ' + named + '</span>'
@@ -971,10 +1017,7 @@
     let html = '';
     if (state.pools && state.pools.length) {
       html += '<div class="history">' + state.pools.map(g => {
-        const standing = g.fencerIds.slice().sort((x, y) => {
-          const w = poolWins(y) - poolWins(x); if (w) return w;
-          return (fencerById(x).seed || 0) - (fencerById(y).seed || 0);
-        });
+        const standing = poolStanding(g);
         return '<div class="hround"><div class="hround-t">pool ' + g.index + '</div>'
           + standing.map((id, i) => '<div class="hbout">' + (i + 1) + '. <b>' + esc(nameOf(id)) + '</b> ' + rkTag(id) + ' — ' + poolWins(id) + 'W</div>').join('')
           + '</div>';
@@ -1015,17 +1058,15 @@
   }
   function renderPoolCard(g) {
     const open = ui.poolOpen[g.index] !== false;
-    const standing = g.fencerIds.slice().sort((x, y) => {
-      const w = poolWins(y) - poolWins(x); if (w) return w;
-      return (fencerById(x).seed || 0) - (fencerById(y).seed || 0);
-    });
+    const standing = poolStanding(g);
+    const gpp = state.meta.guaranteePerPool || 0;
     let s = '<div class="card" style="margin-top:1rem"><div class="card-title">'
       + '<button class="btn tiny ghost" data-action="toggle-pool" data-i="' + g.index + '">'
       + (open ? '▾ pool ' : '▸ pool ') + g.index + ' · ' + g.fencerIds.length + ' fencers</button>'
       + '<span class="srec">' + g.bouts.filter(b => b.result).length + '/' + g.bouts.length + '</span></div>';
     if (open) {
       s += '<div class="standings">' + standing.map((id, i) =>
-        '<div class="srow"><span class="place">' + (i + 1) + '</span>'
+        '<div class="srow' + (gpp && i < gpp ? ' qual' : '') + '"><span class="place">' + (i + 1) + '</span>'
         + '<span class="sname">' + esc(nameOf(id)) + ' ' + rkTag(id) + '</span>'
         + '<span class="srec">' + poolWins(id) + 'W</span></div>').join('') + '</div>';
       s += '<div class="bouts" style="margin-top:.7rem">' + g.bouts.map(bt => renderPoolBout(g, bt)).join('') + '</div>';
@@ -1313,6 +1354,10 @@
       case 'numpools-dec': state.meta.numPools = Math.max(1, (state.meta.numPools || 1) - 1); save(); render(); break;
       case 'advance-inc': state.meta.advanceCount = Math.max(1, (state.meta.advanceCount || 1) + 1); save(); render(); break;
       case 'advance-dec': state.meta.advanceCount = Math.max(1, (state.meta.advanceCount || 1) - 1); save(); render(); break;
+      case 'guarantee-inc': state.meta.guaranteePerPool = Math.max(0, (state.meta.guaranteePerPool || 0) + 1); save(); render(); break;
+      case 'guarantee-dec': state.meta.guaranteePerPool = Math.max(0, (state.meta.guaranteePerPool || 0) - 1); save(); render(); break;
+      case 'ranklife-inc': { state.meta.rankLives = state.meta.rankLives || {}; const k = ds.id; const cur = state.meta.rankLives[k] != null ? state.meta.rankLives[k] : state.meta.defaultLives; state.meta.rankLives[k] = Math.max(1, clampLives(cur + 1) || 1); save(); render(); break; }
+      case 'ranklife-dec': { state.meta.rankLives = state.meta.rankLives || {}; const k = ds.id; const cur = state.meta.rankLives[k] != null ? state.meta.rankLives[k] : state.meta.defaultLives; state.meta.rankLives[k] = Math.max(1, clampLives(cur - 1)); save(); render(); break; }
       case 'cycle-rank': { const f = fencerById(ds.id); if (f) { const i = RANK_ORDER.indexOf(f.rank || 'N/A'); f.rank = RANK_ORDER[(i + 1) % RANK_ORDER.length]; save(); render(); } break; }
       case 'deflife-inc': state.meta.defaultLives = clampLives(state.meta.defaultLives + 1) || 1; save(); render(); break;
       case 'deflife-dec': state.meta.defaultLives = Math.max(1, clampLives(state.meta.defaultLives - 1)); save(); render(); break;
@@ -1398,6 +1443,8 @@
     else if (bind === 'curlife') { const f = fencerById(t.dataset.id); if (f) { f.currentLives = clampLives(t.value); save(); } }
     else if (bind === 'numpools') { state.meta.numPools = Math.max(1, parseInt(t.value, 10) || 1); save(); }
     else if (bind === 'advance') { state.meta.advanceCount = Math.max(1, parseInt(t.value, 10) || 1); save(); }
+    else if (bind === 'guarantee') { state.meta.guaranteePerPool = Math.max(0, parseInt(t.value, 10) || 0); save(); }
+    else if (bind === 'ranklife') { state.meta.rankLives = state.meta.rankLives || {}; state.meta.rankLives[t.dataset.id] = Math.max(1, clampLives(t.value)); save(); }
   });
 
   // commit life-number edits on blur so status/elimination updates
