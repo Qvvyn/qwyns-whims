@@ -127,6 +127,10 @@
   .field { display: flex; flex-direction: column; gap: 0.5rem; }
   .field > span { font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
   .hint { font-size: 0.72rem; color: var(--ink-dim); line-height: 1.5; }
+  .suggest { flex-direction: row; align-items: center; gap: 0.6rem; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 12px; padding: 0.7rem 0.8rem; background: var(--panel); }
+  .suggest .hint { flex: 1; min-width: 8rem; }
+  .suggest b { color: var(--purple); }
+  .suggest .btn { flex: 0 0 auto; }
 
   .text-input, .num-input {
     background: rgba(6, 4, 16, 0.6);
@@ -365,7 +369,7 @@
     'startlife-inc', 'startlife-dec', 'result', 'undo-result', 'undo-last', 'advance', 'finish',
     'curlife-inc', 'curlife-dec', 'eliminate', 'revive', 'delete-fencer',
     'draft-save', 'do-reset', 'do-import', 'do-bulk', 'rematch',
-    'set-format', 'numpools-inc', 'numpools-dec', 'advance-inc', 'advance-dec', 'cycle-rank',
+    'set-format', 'apply-suggestion', 'numpools-inc', 'numpools-dec', 'advance-inc', 'advance-dec', 'cycle-rank',
     'ranklife-inc', 'ranklife-dec', 'guarantee-inc', 'guarantee-dec',
     'pool-result', 'pool-undo-result', 'advance-to-bracket', 'reshuffle-pools'
   ]);
@@ -973,13 +977,29 @@
       + '</div>';
   }
 
-  // Live-update the setup fencer count / start button / pool preview without a
-  // full re-render (so typing in a name field keeps focus).
+  // Format recommendation from headcount (bouts grow quadratically in a pool).
+  function suggestFormat(n) {
+    if (n < 2) return null;
+    if (n <= 6) return { label: '1 big pool — everyone fences everyone, top 2 to a final', cfg: { format: 'pools', numPools: 1, advanceCount: 2, guaranteePerPool: 0 } };
+    if (n <= 12) return { label: '2 pools — top 2 from each into a 4-fencer final', cfg: { format: 'pools', numPools: 2, advanceCount: 4, guaranteePerPool: 2 } };
+    return { label: 'lives — 3 lives each, last fencer standing', cfg: { format: 'lives', defaultLives: 3 } };
+  }
+  function suggestionHTML() {
+    const n = state.fencers.filter(f => (f.name || '').trim().length).length;
+    const s = suggestFormat(n);
+    if (!s) return '<span class="hint">Add at least 2 fencers for a format suggestion.</span>';
+    return '<span class="hint">💡 for ' + n + ' fencers: <b>' + s.label + '</b></span>'
+      + '<button class="btn tiny" data-action="apply-suggestion">apply</button>';
+  }
+
+  // Live-update the setup fencer count / start button / pool preview / suggestion
+  // without a full re-render (so typing in a name field keeps focus).
   function refreshSetupCounts() {
     const named = state.fencers.filter(f => (f.name || '').trim().length).length;
     const cnt = document.getElementById('fencer-count'); if (cnt) cnt.textContent = 'fencers · ' + named;
     const sb = document.getElementById('start-btn'); if (sb) { if (named >= 2) sb.removeAttribute('disabled'); else sb.setAttribute('disabled', ''); }
     const pp = document.getElementById('pool-preview'); if (pp) pp.textContent = poolPreview();
+    const sg = document.getElementById('format-suggestion'); if (sg) sg.innerHTML = suggestionHTML();
   }
 
   // ---- setup ----
@@ -1013,6 +1033,8 @@
       + '<p class="hint">' + (m.format === 'pools'
           ? 'Round-robin pools, then the top fencers (overall) advance into the lives bracket.'
           : 'Straight lives bracket — last fencer standing wins.') + '</p></div>'
+
+      + '<div class="field suggest" id="format-suggestion">' + suggestionHTML() + '</div>'
 
       + '<div class="field"><span>mode</span>'
       + '<div class="segmented">'
@@ -1472,6 +1494,7 @@
       case 'remove-fencer': state.fencers = state.fencers.filter(f => f.id !== ds.id); save(); render(); break;
       case 'start': startTournament(); break;
       case 'set-format': state.meta.format = ds.format; save(); render(); break;
+      case 'apply-suggestion': { const n = state.fencers.filter(f => (f.name || '').trim().length).length; const sug = suggestFormat(n); if (sug) { Object.keys(sug.cfg).forEach(k => { state.meta[k] = sug.cfg[k]; }); save(); render(); } break; }
       case 'numpools-inc': state.meta.numPools = Math.max(1, (state.meta.numPools || 1) + 1); save(); render(); break;
       case 'numpools-dec': state.meta.numPools = Math.max(1, (state.meta.numPools || 1) - 1); save(); render(); break;
       case 'advance-inc': state.meta.advanceCount = Math.max(1, (state.meta.advanceCount || 1) + 1); save(); render(); break;
