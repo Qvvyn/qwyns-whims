@@ -323,6 +323,19 @@
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
   }
+
+  /* ---- toast ---- */
+  #toast-root { position: fixed; bottom: 5rem; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+    z-index: 100; pointer-events: none; }
+  .toast { font-family: inherit; font-size: 0.82rem; letter-spacing: 0.04em;
+    padding: 0.6rem 1rem; border-radius: 12px; border: 1px solid var(--line);
+    background: rgba(10, 6, 18, 0.92); color: var(--ink);
+    backdrop-filter: blur(6px); white-space: nowrap;
+    animation: toast-in 0.2s ease; }
+  .toast.warn { border-color: rgba(248,113,113,0.5); color: var(--out); }
+  .toast.ok   { border-color: rgba(168,85,247,0.4); color: var(--purple); }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 </style>
 </head>
 <body>
@@ -338,14 +351,27 @@
 
 <main id="app"></main>
 <div id="modal-root"></div>
+<div id="toast-root"></div>
 
 <script>
 "use strict";
 (function () {
   const KEY = 'whims.fencing.v1';
   const SCHEMA_VERSION = 1;
+  const KEY_CHECKPOINT = KEY + '.checkpoint';
+  const CHECKPOINT_INTERVAL_MS = 15 * 60 * 1000;
   const app = document.getElementById('app');
   const modalRoot = document.getElementById('modal-root');
+  const toastRoot = document.getElementById('toast-root');
+
+  function showToast(msg, type, duration) {
+    if (!toastRoot) return;
+    const el = document.createElement('div');
+    el.className = 'toast' + (type ? ' ' + type : '');
+    el.textContent = msg;
+    toastRoot.appendChild(el);
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, duration || 3000);
+  }
 
   // transient UI state (not persisted)
   const ui = { menuOpen: false, standingsOpen: false, historyOpen: false, fencerEdit: null, editRound: false, draft: null, modal: null, poolOpen: {}, addDraft: null };
@@ -396,24 +422,45 @@
   function save() {
     try {
       state.meta.updatedAt = now();
-      localStorage.setItem(KEY, JSON.stringify(state));
+      const serialized = JSON.stringify(state);
+      localStorage.setItem(KEY, serialized);
+      try { localStorage.setItem(KEY + '.bak', serialized); } catch (_) {}
     } catch (e) {
-      console.warn('fencing: save failed', e);
+      if (e && (e.name === 'QuotaExceededError' || e.code === 22)) {
+        showToast('⚠ Storage full — export your data now!', 'warn', 8000);
+      } else {
+        console.warn('fencing: save failed', e);
+      }
     }
   }
 
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (!raw) return freshState();
-      const obj = JSON.parse(raw);
-      if (!obj || obj.schemaVersion !== SCHEMA_VERSION || !Array.isArray(obj.fencers)) return freshState();
-      normalizeState(obj);
-      return obj;
-    } catch (e) {
-      console.warn('fencing: load failed, starting fresh', e);
-      return freshState();
-    }
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && obj.schemaVersion === SCHEMA_VERSION && Array.isArray(obj.fencers)) {
+          normalizeState(obj);
+          return obj;
+        }
+      }
+    } catch (_) {}
+
+    try {
+      const bak = localStorage.getItem(KEY + '.bak');
+      if (bak) {
+        const obj = JSON.parse(bak);
+        if (obj && obj.schemaVersion === SCHEMA_VERSION && Array.isArray(obj.fencers)) {
+          normalizeState(obj);
+          setTimeout(function () { showToast('Recovered from backup — primary save was corrupted.', 'warn', 6000); }, 200);
+          return obj;
+        }
+      }
+    } catch (_) {}
+
+    const hadAny = !!(localStorage.getItem(KEY) || localStorage.getItem(KEY + '.bak'));
+    if (hadAny) setTimeout(function () { ui.modal = 'recover'; render(); }, 0);
+    return freshState();
   }
 
   // ---------------- helpers ----------------
@@ -1487,6 +1534,15 @@
         + '<button class="btn danger" data-action="do-reset">yes, reset everything</button>'
         + '<button class="btn ghost" data-action="close-modal">cancel</button>'
         + '</div>';
+    } else if (ui.modal === 'recover') {
+      inner = '<h2>save data could not be read</h2>'
+        + '<p class="hint">The stored tournament data is corrupted or unreadable.</p>'
+        + (ui.modalError ? '<p class="hint" style="color:var(--out)">' + esc(ui.modalError) + '</p>' : '')
+        + '<div class="modal-actions">'
+        + '<button class="btn primary" data-action="recover-from-bak">restore from backup</button>'
+        + '<button class="btn" data-action="open-import">import from file</button>'
+        + '<button class="btn danger" data-action="close-modal">start fresh</button>'
+        + '</div>';
     }
     modalRoot.innerHTML = '<div class="modal-bg" data-action="modal-bg"><div class="modal">' + inner + '</div></div>';
   }
@@ -1569,6 +1625,26 @@
       case 'do-download': doDownload(); break;
       case 'do-import': { const ta = document.getElementById('import-ta'); const err = tryImport(ta ? ta.value : ''); if (err) { ui.modalError = err; render(); } break; }
       case 'close-modal': ui.modal = null; ui.modalError = null; render(); break;
+      case 'recover-from-bak': {
+        try {
+          const bak = localStorage.getItem(KEY + '.bak');
+          const obj = JSON.parse(bak);
+          if (obj && obj.schemaVersion === SCHEMA_VERSION && Array.isArray(obj.fencers)) {
+            normalizeState(obj);
+            state = obj;
+            ui.modal = null; ui.modalError = null;
+            save(); render();
+            showToast('Restored from backup.', 'ok', 4000);
+          } else {
+            ui.modalError = 'Backup also appears corrupted. Try importing a file.';
+            render();
+          }
+        } catch (e) {
+          ui.modalError = 'Could not read backup: ' + (e && e.message || e);
+          render();
+        }
+        break;
+      }
       case 'modal-bg': break; // handled by target check below
       case 'rematch': rematchSameFencers(); break;
       case 'print-results': if (typeof window !== 'undefined' && window.print) window.print(); break;
@@ -1636,6 +1712,29 @@
   });
 
   render();
+
+  // Navigation guard — beforeunload works on desktop; pagehide/visibilitychange cover iOS
+  window.addEventListener('beforeunload', function (e) {
+    if (state.meta.status === 'live') { e.preventDefault(); e.returnValue = ''; }
+  });
+  window.addEventListener('pagehide', function () {
+    if (state.meta.status === 'live') save();
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden' && state.meta.status === 'live') save();
+  });
+
+  // Periodic checkpoint every 15 minutes during active tournament
+  setInterval(function () {
+    if (state.meta.status !== 'live') return;
+    try {
+      localStorage.setItem(KEY_CHECKPOINT, JSON.stringify({ savedAt: Date.now(), state: state }));
+      const t = new Date();
+      const hhmm = t.getHours().toString().padStart(2, '0') + ':' + t.getMinutes().toString().padStart(2, '0');
+      showToast('Checkpoint saved · ' + hhmm, 'ok', 3000);
+    } catch (_) {}
+  }, CHECKPOINT_INTERVAL_MS);
+
 })();
 </script>
 

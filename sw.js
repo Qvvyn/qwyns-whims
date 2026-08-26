@@ -2,7 +2,7 @@
    Scope is the whole site, but this SW deliberately only caches the
    fencing app shell + its fonts — every other page (index, wizardwalk,
    etc.) is left to normal network behaviour so nothing goes stale. */
-const CACHE = 'fencing-v12';
+const CACHE = 'fencing-v13';
 const SHELL = ['./fencing.html', './fencing.webmanifest', './favicon.svg'];
 
 self.addEventListener('install', (e) => {
