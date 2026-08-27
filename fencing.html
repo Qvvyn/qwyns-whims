@@ -1701,7 +1701,28 @@
     const t = e.target;
     if (t.dataset && t.dataset.draft != null) {
       const i = parseInt(t.dataset.draft, 10);
-      if (ui.draft && ui.draft[i]) { ui.draft[i][t.dataset.role] = t.value || (t.dataset.role === 'B' ? null : ''); ui.draftError = null; }
+      if (ui.draft && ui.draft[i]) {
+        const target = ui.draft[i];
+        const role = t.dataset.role;                 // 'A' or 'B'
+        const newId = t.value || null;               // '' / '— bye —' -> null
+        const prev = target[role] || null;           // fencer currently in this slot
+        if (newId) {
+          // the incoming fencer is sitting in some other slot — put the
+          // displaced fencer (prev) there instead of leaving a duplicate
+          ui.draft.forEach(pr => {
+            ['A', 'B'].forEach(rr => {
+              if ((pr !== target || rr !== role) && pr[rr] === newId) {
+                pr[rr] = prev || (rr === 'B' ? null : '');
+              }
+            });
+          });
+        }
+        target[role] = newId || (role === 'B' ? null : '');
+        // a bout left with an empty A but a filled B becomes a bye for B
+        ui.draft.forEach(pr => { if (!pr.A && pr.B) { pr.A = pr.B; pr.B = null; } });
+        ui.draftError = null;
+        render();
+      }
       return;
     }
     if (t.id === 'import-file' && t.files && t.files[0]) {
