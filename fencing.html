@@ -185,6 +185,7 @@
     text-transform: lowercase; letter-spacing: 0.06em; transition: background 0.2s, color 0.2s;
   }
   .segmented button.on { background: linear-gradient(135deg, rgba(124,58,237,0.4), rgba(192,38,211,0.3)); color: #fff; }
+  .segmented.seg3 button { font-size: 0.72rem; padding: 0.8rem 0.3rem; letter-spacing: 0.02em; }
 
   /* stepper */
   .stepper { display: inline-flex; align-items: center; gap: 0.5rem; }
@@ -230,6 +231,11 @@
   .bout-summary .res { font-size: 0.85rem; color: var(--gold); }
   .bye-chip { text-align: center; color: var(--ink-dim); font-size: 0.85rem; letter-spacing: 0.06em; padding: 0.3rem; }
   .bye-chip b { color: var(--ink); }
+  .mpass { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.4rem; }
+  .mpass .pass-lbl { font-size: 0.7rem; color: var(--ink-dim); letter-spacing: 0.05em; flex: 0 0 3.2rem; }
+  .mpass .result-btns { flex: 1; }
+  .srow-head { font-size: 0.7rem; color: var(--ink-dim); letter-spacing: 0.04em; text-transform: uppercase; }
+  .srow-head span { font-weight: 600; }
 
   /* standings */
   .standings { display: flex; flex-direction: column; gap: 0.4rem; }
@@ -360,6 +366,9 @@
   const SCHEMA_VERSION = 1;
   const KEY_CHECKPOINT = KEY + '.checkpoint';
   const CHECKPOINT_INTERVAL_MS = 15 * 60 * 1000;
+  const MAGIC_TABLE = [0, 3, 7, 10];   // points by passes won in an encounter (0..3)
+  const MAGIC_PASSES = 3;
+  const MAGIC_CUT = 4;
   const app = document.getElementById('app');
   const modalRoot = document.getElementById('modal-root');
   const toastRoot = document.getElementById('toast-root');
@@ -374,7 +383,7 @@
   }
 
   // transient UI state (not persisted)
-  const ui = { menuOpen: false, standingsOpen: false, historyOpen: false, fencerEdit: null, editRound: false, draft: null, modal: null, poolOpen: {}, addDraft: null };
+  const ui = { menuOpen: false, standingsOpen: false, historyOpen: false, fencerEdit: null, editRound: false, draft: null, draftError: null, draftWarn: null, modal: null, poolOpen: {}, addDraft: null, magicCut: null, magicCutError: null };
 
   // ---- global undo: snapshot the whole state before each mutating action ----
   const undoStack = [];
@@ -397,7 +406,9 @@
     'draft-save', 'do-reset', 'do-import', 'do-bulk', 'rematch',
     'set-format', 'apply-suggestion', 'numpools-inc', 'numpools-dec', 'advance-inc', 'advance-dec', 'cycle-rank',
     'ranklife-inc', 'ranklife-dec', 'guarantee-inc', 'guarantee-dec',
-    'pool-result', 'pool-undo-result', 'advance-to-bracket', 'reshuffle-pools'
+    'pool-result', 'pool-undo-result', 'advance-to-bracket', 'reshuffle-pools',
+    'magicrounds-inc', 'magicrounds-dec', 'magic-pass', 'magic-pass-undo',
+    'magic-to-cut', 'confirm-magic-cut', 'do-unstart', 'do-clear-fencers'
   ]);
 
   // ---------------- state ----------------
@@ -409,10 +420,12 @@
       meta: { name: '', mode: 'unweighted', defaultLives: 3, status: 'setup',
               format: 'lives', phase: null, numPools: 2, advanceCount: 8,
               rankLives: { 'N/A': 4, 'OSR': 3, 'OGR': 2, 'MoD': 1 }, guaranteePerPool: 0,
+              magicRoundTarget: 5,
               champion: null, nextFencerId: 1, createdAt: now(), updatedAt: now() },
       fencers: [],
       rounds: [],
       pools: [],
+      magicRounds: [],
       history: { opponents: {}, byeCount: {} }
     };
   }
@@ -467,8 +480,10 @@
   function newFencerId() { const id = 'f' + state.meta.nextFencerId; state.meta.nextFencerId++; return id; }
   function fencerById(id) { return state.fencers.find(f => f.id === id); }
   function aliveFencers() { return state.fencers.filter(f => f.status === 'alive'); }
-  function currentRound() { return state.rounds.length ? state.rounds[state.rounds.length - 1] : null; }
-  function roundComplete(r) { return r && r.pairings.every(p => p.result != null); }
+  function activeRoundArr() { return state.meta.phase === 'magic' ? state.magicRounds : state.rounds; }
+  function currentRound() { const a = activeRoundArr(); return a.length ? a[a.length - 1] : null; }
+  function pairingDone(p) { return p.fencerB == null || (p.passes ? p.passes.every(x => x != null) : p.result != null); }
+  function roundComplete(r) { return r && r.pairings.every(pairingDone); }
   function nameOf(id) { const f = fencerById(id); return f ? displayName(f) : '?'; }
   // Disambiguate fencers who share a name (display only — underlying data unchanged).
   function displayName(f) {
@@ -510,7 +525,7 @@
   function recomputeHistory(s) {
     const opp = {}, bye = {};
     s.fencers.forEach(f => { opp[f.id] = {}; bye[f.id] = 0; });
-    s.rounds.forEach(r => {
+    (s.magicRounds || []).concat(s.rounds).forEach(r => {
       r.pairings.forEach(p => {
         if (p.fencerB == null) {
           if (bye[p.fencerA] != null) bye[p.fencerA]++;
@@ -545,7 +560,9 @@
     if (s.meta.advanceCount == null) s.meta.advanceCount = 8;
     if (!s.meta.rankLives) s.meta.rankLives = { 'N/A': 4, 'OSR': 3, 'OGR': 2, 'MoD': 1 };
     if (s.meta.guaranteePerPool == null) s.meta.guaranteePerPool = 0;
+    if (s.meta.magicRoundTarget == null) s.meta.magicRoundTarget = 5;
     s.pools = s.pools || [];
+    if (!Array.isArray(s.magicRounds)) s.magicRounds = [];
     if (s.meta.nextFencerId == null) {
       let mx = 0; s.fencers.forEach(f => { const n = parseInt(String(f.id).slice(1), 10); if (!isNaN(n)) mx = Math.max(mx, n); });
       s.meta.nextFencerId = mx + 1;
@@ -660,6 +677,185 @@
     state.rounds.push({ index: index, status: 'open', pairings: pairings });
   }
 
+  // ---------------- magic points ----------------
+  function passWinner(p, k) {
+    const r = p.passes ? p.passes[k] : null;
+    if (r === 'A') return p.fencerA;
+    if (r === 'B') return p.fencerB;
+    return null;
+  }
+  function encounterComplete(p) { return !!(p.passes && p.passes.every(x => x != null)); }
+  function magicEncounterWins(p, id) {
+    let w = 0;
+    for (let k = 0; k < MAGIC_PASSES; k++) if (passWinner(p, k) === id) w++;
+    return w;
+  }
+  function magicEachRound(fn) {
+    (state.magicRounds || []).forEach(r => r.pairings.forEach(p => fn(p, r)));
+  }
+  function magicTotal(id) {
+    let pts = 0;
+    magicEachRound(p => {
+      if (p.fencerB == null || !encounterComplete(p)) return;
+      if (p.fencerA === id || p.fencerB === id) pts += MAGIC_TABLE[magicEncounterWins(p, id)];
+    });
+    return pts;
+  }
+  function magicFights(id) {
+    let n = 0;
+    magicEachRound(p => { if (p.fencerB != null && encounterComplete(p) && (p.fencerA === id || p.fencerB === id)) n++; });
+    return n;
+  }
+  function magicByes(id) {
+    let n = 0;
+    magicEachRound(p => { if (p.fencerB == null && p.fencerA === id) n++; });
+    return n;
+  }
+  function magicPassRecord(id) {
+    let w = 0, d = 0, l = 0;
+    magicEachRound(p => {
+      if (p.fencerB == null || (p.fencerA !== id && p.fencerB !== id)) return;
+      for (let k = 0; k < MAGIC_PASSES; k++) {
+        const r = p.passes ? p.passes[k] : null;
+        if (r == null) continue;
+        if (r === 'double') d++;
+        else if (passWinner(p, k) === id) w++;
+        else l++;
+      }
+    });
+    return { w: w, d: d, l: l };
+  }
+  function magicAvg(id) { const f = magicFights(id); return f ? magicTotal(id) / f : null; }
+  function magicStanding() {
+    return shuffle(state.fencers.filter(f => f.status === 'alive')).sort((a, b) => {
+      const pt = magicTotal(b.id) - magicTotal(a.id); if (pt) return pt;
+      const av = (magicAvg(b.id) || 0) - (magicAvg(a.id) || 0); if (av) return av;
+      return magicPassRecord(b.id).w - magicPassRecord(a.id).w;
+    });
+  }
+
+  function generateMagicPairings() {
+    recomputeHistory(state);
+    const opp = state.history.opponents;
+    const fought = (a, b) => !!((opp[a] || {})[b]);
+    const first = state.magicRounds.length === 0;
+    let ids = aliveFencers().map(f => f.id);
+    let byeFencer = null;
+
+    if (ids.length % 2 === 1) {
+      if (first) {
+        byeFencer = shuffle(ids)[0];
+      } else {
+        const order = ids.slice().sort((a, b) => magicTotal(b) - magicTotal(a));
+        const lower = order.slice(Math.ceil(order.length / 2));
+        const minB = lower.reduce((m, id) => Math.min(m, magicByes(id)), Infinity);
+        const cands = lower.filter(id => magicByes(id) === minB);
+        byeFencer = cands[Math.floor(Math.random() * cands.length)];
+      }
+      ids = ids.filter(id => id !== byeFencer);
+    }
+
+    let order;
+    if (first) {
+      order = shuffle(ids);
+    } else {
+      order = shuffle(ids).sort((a, b) => {
+        const pt = magicTotal(b) - magicTotal(a); if (pt) return pt;
+        return (magicAvg(b) || 0) - (magicAvg(a) || 0);
+      });
+    }
+
+    const used = new Set();
+    const pairings = [];
+    for (let i = 0; i < order.length; i++) {
+      const f = order[i];
+      if (used.has(f)) continue;
+      used.add(f);
+      let pick = null;
+      for (let j = i + 1; j < order.length; j++) {
+        const g = order[j];
+        if (used.has(g)) continue;
+        if (!fought(f, g)) { pick = g; break; }
+        if (pick == null) pick = g;
+      }
+      if (pick == null) continue;
+      used.add(pick);
+      pairings.push({ A: f, B: pick });
+    }
+
+    // 2-opt sweep to reduce forced rematches
+    for (let i = 0; i < pairings.length; i++) {
+      for (let j = i + 1; j < pairings.length; j++) {
+        const p = pairings[i], q = pairings[j];
+        const cur = (fought(p.A, p.B) ? 1 : 0) + (fought(q.A, q.B) ? 1 : 0);
+        if (!cur) continue;
+        const o1 = (fought(p.A, q.B) ? 1 : 0) + (fought(q.A, p.B) ? 1 : 0);
+        const o2 = (fought(p.A, q.A) ? 1 : 0) + (fought(p.B, q.B) ? 1 : 0);
+        if (o1 < cur && o1 <= o2) { const t = p.B; p.B = q.B; q.B = t; }
+        else if (o2 < cur) { const t = p.B; p.B = q.A; q.A = t; }
+      }
+    }
+
+    return { byeFencer: byeFencer, pairings: pairings };
+  }
+
+  function addMagicRoundFromGen(gen) {
+    const index = state.magicRounds.length + 1;
+    let n = 1;
+    const pairings = gen.pairings.map(p => ({ id: 'm' + index + 'p' + (n++), fencerA: p.A, fencerB: p.B, passes: [null, null, null], result: null }));
+    if (gen.byeFencer) pairings.push({ id: 'm' + index + 'p' + (n++), fencerA: gen.byeFencer, fencerB: null, passes: null, result: 'bye' });
+    state.magicRounds.push({ index: index, status: 'open', phase: 'magic', pairings: pairings });
+  }
+
+  function advanceMagicRound() {
+    const r = currentRound();
+    if (!roundComplete(r)) return;
+    r.status = 'complete';
+    addMagicRoundFromGen(generateMagicPairings());
+    ui.editRound = false; ui.draft = null; ui.draftWarn = null;
+    save(); render();
+  }
+
+  function enterMagicCut() {
+    const top = magicStanding().slice(0, MAGIC_CUT).map(f => f.id);
+    while (top.length < MAGIC_CUT) top.push('');
+    ui.magicCut = top;
+    ui.magicCutError = null;
+    ui.menuOpen = false;
+    render();
+  }
+
+  function confirmMagicCut() {
+    const seeds = (ui.magicCut || []).map(id => id || '');
+    if (seeds.some(id => !id)) { ui.magicCutError = 'Pick a fencer for every seed.'; render(); return; }
+    if (new Set(seeds).size !== seeds.length) { ui.magicCutError = 'Each fencer can only take one seed.'; render(); return; }
+    const advancing = seeds.slice();
+    const advSet = new Set(advancing);
+    // rank the rest by points (worst first) for elimination order
+    const rest = state.fencers.filter(f => f.status === 'alive' && !advSet.has(f.id))
+      .sort((a, b) => magicTotal(a.id) - magicTotal(b.id));
+    let order = 0;
+    state.fencers.forEach(f => { if (f.status === 'out' && f.eliminationOrder) order = Math.max(order, f.eliminationOrder); });
+    rest.forEach(f => { f.currentLives = 0; f.status = 'out'; f.eliminationOrder = ++order; });
+    const lives = Math.max(1, clampLives(state.meta.defaultLives));
+    advancing.forEach((id, i) => {
+      const f = fencerById(id);
+      f.startingLives = lives; f.currentLives = lives; f.status = 'alive'; f.eliminationOrder = null; f.seed = i;
+    });
+    // seeded first bracket round: 1 v 4, 2 v 3
+    state.meta.phase = 'bracket';
+    state.rounds = [];
+    const pairs = [[advancing[0], advancing[3]], [advancing[1], advancing[2]]];
+    let n = 1;
+    state.rounds.push({
+      index: 1, status: 'open',
+      pairings: pairs.map(pr => ({ id: 'r1p' + (n++), fencerA: pr[0], fencerB: pr[1], result: null, applied: null }))
+    });
+    recomputeHistory(state);
+    ui.magicCut = null; ui.magicCutError = null; ui.standingsOpen = false;
+    save(); render();
+  }
+
   // ---------------- actions ----------------
   function startTournament() {
     // drop unnamed fencers
@@ -674,9 +870,14 @@
     });
     state.meta.champion = null;
     state.rounds = [];
+    state.magicRounds = [];
     if (state.meta.format === 'pools') {
       generatePools();
       state.meta.phase = 'pools';
+    } else if (state.meta.format === 'magic') {
+      state.fencers.forEach(f => { f.seed = null; });
+      state.meta.phase = 'magic';
+      addMagicRoundFromGen(generateMagicPairings());
     } else {
       state.meta.phase = null;
       addRoundFromGen(generatePairings());
@@ -840,7 +1041,7 @@
   function recordResult(pid, result) {
     const r = currentRound();
     const p = r && r.pairings.find(x => x.id === pid);
-    if (!p || p.fencerB == null) return;
+    if (!p || p.fencerB == null || p.passes) return;
     revertResult(p);
     p.result = result;
     applyResult(p);
@@ -856,6 +1057,7 @@
   }
 
   function advanceRound() {
+    if (state.meta.phase === 'magic') return advanceMagicRound();
     const r = currentRound();
     if (!roundComplete(r)) return;
     const alive = aliveFencers();
@@ -901,7 +1103,7 @@
   function deleteFencer(id) {
     state.fencers = state.fencers.filter(f => f.id !== id);
     // strip from any pairings + revert their applied deltas
-    state.rounds.forEach(r => {
+    state.rounds.concat(state.magicRounds).forEach(r => {
       r.pairings = r.pairings.filter(p => {
         if (p.fencerA === id || p.fencerB === id) { return false; }
         return true;
@@ -917,12 +1119,93 @@
     const r = currentRound(); if (!r) return;
     ui.draft = r.pairings.map(p => ({ A: p.fencerA, B: p.fencerB }));
     ui.editRound = true;
+    ui.draftError = null;
+    refreshDraftWarn();
     render();
   }
   function autoFillDraft() {
     const gen = generatePairings();
     ui.draft = gen.pairings.map(p => ({ A: p.A, B: p.B }));
     if (gen.byeFencer) ui.draft.push({ A: gen.byeFencer, B: null });
+    ui.draftError = null;
+    refreshDraftWarn();
+    render();
+  }
+  // ---- rematch check for the manual editor ----
+  function draftRematchPairs() {
+    recomputeHistory(state);
+    const opp = state.history.opponents || {};
+    const out = [];
+    (ui.draft || []).forEach(pr => {
+      if (pr.A && pr.B && opp[pr.A] && opp[pr.A][pr.B]) out.push({ a: pr.A, b: pr.B });
+    });
+    return out;
+  }
+  function refreshDraftWarn() {
+    const rm = draftRematchPairs();
+    ui.draftWarn = rm.length ? rm : null;
+  }
+  function freshenDraft() {
+    recomputeHistory(state);
+    const opp = state.history.opponents || {};
+    const byeCnt = state.history.byeCount || {};
+    const fought = (a, b) => !!(opp[a] && opp[a][b]);
+    const ids = [];
+    (ui.draft || []).forEach(pr => { if (pr.A) ids.push(pr.A); if (pr.B) ids.push(pr.B); });
+    const odd = ids.length % 2 === 1;
+
+    function build() {
+      let pool = shuffle(ids);
+      let byeFencer = null;
+      if (odd) {
+        const minB = pool.reduce((m, id) => Math.min(m, byeCnt[id] || 0), Infinity);
+        const cands = pool.filter(id => (byeCnt[id] || 0) === minB);
+        byeFencer = cands[Math.floor(Math.random() * cands.length)];
+        pool = pool.filter(id => id !== byeFencer);
+      }
+      const used = new Set();
+      const prs = [];
+      for (const f of pool) {
+        if (used.has(f)) continue;
+        used.add(f);
+        const cand = pool.filter(g => g !== f && !used.has(g));
+        if (!cand.length) continue;
+        const fresh = cand.filter(g => !fought(f, g));
+        const pick = (fresh.length ? shuffle(fresh) : shuffle(cand))[0];
+        used.add(pick);
+        prs.push({ A: f, B: pick });
+      }
+      let improved = true, guard = 0;
+      while (improved && guard++ < 8) {
+        improved = false;
+        for (let i = 0; i < prs.length; i++) for (let j = i + 1; j < prs.length; j++) {
+          const p = prs[i], q = prs[j];
+          const cur = (fought(p.A, p.B) ? 1 : 0) + (fought(q.A, q.B) ? 1 : 0);
+          if (!cur) continue;
+          const o1 = (fought(p.A, q.B) ? 1 : 0) + (fought(q.A, p.B) ? 1 : 0);
+          const o2 = (fought(p.A, q.A) ? 1 : 0) + (fought(p.B, q.B) ? 1 : 0);
+          if (o1 < cur && o1 <= o2) { const t = p.B; p.B = q.B; q.B = t; improved = true; }
+          else if (o2 < cur) { const t = p.B; p.B = q.A; q.A = t; improved = true; }
+        }
+      }
+      const score = prs.reduce((s, pr) => s + (fought(pr.A, pr.B) ? 1 : 0), 0);
+      return { prs, byeFencer, score };
+    }
+
+    let best = null;
+    for (let k = 0; k < 24; k++) {
+      const b = build();
+      if (!best || b.score < best.score) best = b;
+      if (best.score === 0) break;
+    }
+    ui.draft = best.prs.map(pr => ({ A: pr.A, B: pr.B }));
+    if (best.byeFencer) ui.draft.push({ A: best.byeFencer, B: null });
+    ui.draftError = null;
+    refreshDraftWarn();
+    const n = ui.draftWarn ? ui.draftWarn.length : 0;
+    showToast(n === 0 ? 'Fresh pairings — everyone has a new opponent'
+                      : ('Best possible — ' + n + ' rematch(es) unavoidable'),
+              n === 0 ? 'ok' : 'warn', 4000);
     render();
   }
   function draftValidation() {
@@ -944,15 +1227,19 @@
     const err = draftValidation();
     if (err) { ui.draftError = err; render(); return; }
     const r = currentRound();
-    r.pairings.forEach(p => revertResult(p)); // clear recorded results / life deltas
+    const magic = state.meta.phase === 'magic';
+    const rematchCount = draftRematchPairs().length;
+    if (!magic) r.pairings.forEach(p => revertResult(p)); // clear recorded results / life deltas
     const index = r.index; let n = 1;
-    r.pairings = ui.draft.filter(pr => pr.A).map(pr => ({
-      id: 'r' + index + 'p' + (n++), fencerA: pr.A, fencerB: pr.B || null,
-      result: pr.B ? null : 'bye', applied: null
-    }));
+    r.pairings = ui.draft.filter(pr => pr.A).map(pr => magic
+      ? { id: 'm' + index + 'p' + (n++), fencerA: pr.A, fencerB: pr.B || null,
+          passes: pr.B ? [null, null, null] : null, result: pr.B ? null : 'bye' }
+      : { id: 'r' + index + 'p' + (n++), fencerA: pr.A, fencerB: pr.B || null,
+          result: pr.B ? null : 'bye', applied: null });
     recomputeHistory(state);
-    ui.editRound = false; ui.draft = null; ui.draftError = null;
+    ui.editRound = false; ui.draft = null; ui.draftError = null; ui.draftWarn = null;
     save(); render();
+    if (rematchCount) showToast(rematchCount + ' rematch(es) in this round', 'warn', 4000);
   }
 
   function resetTournament() {
@@ -960,14 +1247,21 @@
     ui.menuOpen = false; ui.fencerEdit = null; ui.standingsOpen = false; ui.modal = null; ui.addDraft = null;
     save(); render();
   }
-  function rematchSameFencers() {
-    state.rounds = [];
+  function unstartTournament() {
+    // back to the setup screen with the roster (names, ranks, starting lives) kept,
+    // every round / pool / result cleared.
     state.meta.status = 'setup';
+    state.meta.phase = null;
     state.meta.champion = null;
-    state.fencers.forEach(f => { f.currentLives = null; f.status = 'alive'; f.eliminationOrder = null; });
-    ui.menuOpen = false;
+    state.rounds = [];
+    state.pools = [];
+    state.magicRounds = [];
+    state.fencers.forEach(f => { f.currentLives = null; f.status = 'alive'; f.eliminationOrder = null; f.seed = null; });
+    ui.menuOpen = false; ui.standingsOpen = false; ui.historyOpen = false; ui.editRound = false;
+    ui.draft = null; ui.draftError = null; ui.draftWarn = null; ui.magicCut = null; ui.magicCutError = null; ui.poolOpen = {};
     save(); render();
   }
+  function rematchSameFencers() { unstartTournament(); }
 
   // ---------------- import / export ----------------
   function exportText() { return JSON.stringify(state, null, 2); }
@@ -1012,6 +1306,7 @@
     if (state.meta.status === 'setup') renderSetup();
     else if (state.meta.status === 'finished') renderFinished();
     else if (state.meta.format === 'pools' && state.meta.phase === 'pools') renderPools();
+    else if (state.meta.format === 'magic' && state.meta.phase === 'magic') { if (ui.magicCut) renderMagicCut(); else renderMagic(); }
     else renderLive();
     renderModal();
   }
@@ -1052,7 +1347,8 @@
   function refreshSetupCounts() {
     const named = state.fencers.filter(f => (f.name || '').trim().length).length;
     const cnt = document.getElementById('fencer-count'); if (cnt) cnt.textContent = 'fencers · ' + named;
-    const sb = document.getElementById('start-btn'); if (sb) { if (named >= 2) sb.removeAttribute('disabled'); else sb.setAttribute('disabled', ''); }
+    const minF = state.meta.format === 'magic' ? 4 : 2;
+    const sb = document.getElementById('start-btn'); if (sb) { if (named >= minF) sb.removeAttribute('disabled'); else sb.setAttribute('disabled', ''); }
     const pp = document.getElementById('pool-preview'); if (pp) pp.textContent = poolPreview();
     const sg = document.getElementById('format-suggestion'); if (sg) sg.innerHTML = suggestionHTML();
   }
@@ -1061,8 +1357,10 @@
   function renderSetup() {
     const m = state.meta;
     const weighted = m.mode === 'weighted';
+    const magic = m.format === 'magic';
     const showRank = m.format === 'pools';
-    const showLives = weighted && m.format !== 'pools';
+    const showLives = weighted && m.format === 'lives';
+    const minFencers = magic ? 4 : 2;
     const rows = state.fencers.map(f =>
       '<div class="frow">'
       + '<input class="text-input" data-bind="rename" data-id="' + f.id + '" value="' + esc(f.name) + '" placeholder="name" autocapitalize="words" autocomplete="off">'
@@ -1081,17 +1379,20 @@
       + '<input class="text-input" data-bind="name" value="' + esc(m.name) + '" placeholder="1v1 final destination fox only no items 4 stocks 8 minutes GO!" autocapitalize="words" autocomplete="off"></label>'
 
       + '<div class="field"><span>format</span>'
-      + '<div class="segmented">'
-      + '<button data-action="set-format" data-format="lives" class="' + (m.format !== 'pools' ? 'on' : '') + '">lives only</button>'
+      + '<div class="segmented seg3">'
+      + '<button data-action="set-format" data-format="lives" class="' + (m.format === 'lives' ? 'on' : '') + '">lives only</button>'
       + '<button data-action="set-format" data-format="pools" class="' + (m.format === 'pools' ? 'on' : '') + '">pools → bracket</button>'
+      + '<button data-action="set-format" data-format="magic" class="' + (magic ? 'on' : '') + '">magic points</button>'
       + '</div>'
       + '<p class="hint">' + (m.format === 'pools'
           ? 'Round-robin pools, then the top fencers (overall) advance into the lives bracket.'
+          : magic
+          ? '3 passes per bout, 10 / 7 / 3 / 0 pts for 3 / 2 / 1 / 0 wins. Opponents matched by points; after the set rounds the top 4 go to a lives bracket.'
           : 'Straight lives bracket — last fencer standing wins.') + '</p></div>'
 
-      + '<div class="field suggest" id="format-suggestion">' + suggestionHTML() + '</div>'
+      + (magic ? '' : '<div class="field suggest" id="format-suggestion">' + suggestionHTML() + '</div>')
 
-      + '<div class="field"><span>mode</span>'
+      + (magic ? '' : '<div class="field"><span>mode</span>'
       + '<div class="segmented">'
       + '<button data-action="set-mode" data-mode="unweighted" class="' + (!weighted ? 'on' : '') + '">unweighted</button>'
       + '<button data-action="set-mode" data-mode="weighted" class="' + (weighted ? 'on' : '') + '">weighted</button>'
@@ -1100,10 +1401,16 @@
           ? (weighted ? 'Pools are seeded by rank so each pool gets a fair spread of strong and weak fencers.'
                       : 'Fencers are distributed into pools at random.')
           : (weighted ? 'Each fencer starts with the lives you set — more lives = more chances to prove yourself.'
-                      : 'Everyone starts with the same number of lives.')) + '</p></div>'
+                      : 'Everyone starts with the same number of lives.')) + '</p></div>')
 
-      + ((m.format !== 'pools' && !weighted)
+      + ((m.format === 'lives' && !weighted)
           ? '<div class="field"><span>starting lives (everyone)</span>' + stepperHTML('deflife', '', m.defaultLives, 1) + '</div>'
+          : '')
+
+      + (magic
+          ? '<div class="field"><span>rounds before top-4 unlocks</span>' + stepperHTML('magicrounds', '', m.magicRoundTarget, 1)
+            + '<p class="hint">After this many rounds a “continue to top 4” button appears; you can still run more rounds first.</p></div>'
+            + '<div class="field"><span>starting lives · top-4 bracket (everyone)</span>' + stepperHTML('deflife', '', m.defaultLives, 1) + '</div>'
           : '')
 
       + (m.format === 'pools'
@@ -1120,9 +1427,12 @@
       + '<div class="field"><span id="fencer-count">fencers · ' + named + '</span>'
       + '<div class="fencer-rows">' + rows + '</div>'
       + '<div class="row wrap"><button class="btn ghost" data-action="add-fencer-setup">+ add fencer</button>'
-      + '<button class="btn ghost" data-action="open-bulk">paste a list</button></div></div>'
+      + '<button class="btn ghost" data-action="open-bulk">paste a list</button>'
+      + (state.fencers.length ? '<button class="btn ghost" data-action="confirm-clear-fencers">clear all</button>' : '')
+      + '</div></div>'
 
-      + '<button class="btn primary big" id="start-btn" data-action="start" ' + (named >= 2 ? '' : 'disabled') + '>start tournament →</button>'
+      + '<button class="btn primary big" id="start-btn" data-action="start" ' + (named >= minFencers ? '' : 'disabled') + '>start tournament →</button>'
+      + (magic ? '<p class="hint">Magic points needs at least 4 fencers.</p>' : '')
       + '<button class="btn ghost" data-action="open-import">import a saved tournament</button>'
       + '</section>';
   }
@@ -1147,6 +1457,21 @@
   }
   function renderHistory() {
     let html = '';
+    if (state.magicRounds && state.magicRounds.length) {
+      const mr = state.magicRounds.slice().reverse();
+      html += '<div class="history">' + mr.map(r => {
+        const bouts = r.pairings.map(p => {
+          if (p.fencerB == null) return '<div class="hbout">🛡 bye — ' + esc(nameOf(p.fencerA)) + '</div>';
+          const A = esc(nameOf(p.fencerA)), B = esc(nameOf(p.fencerB));
+          if (encounterComplete(p)) {
+            const wa = magicEncounterWins(p, p.fencerA), wb = magicEncounterWins(p, p.fencerB);
+            return '<div class="hbout">' + A + ' <b>' + wa + '–' + wb + '</b> ' + B + ' · +' + MAGIC_TABLE[wa] + '/+' + MAGIC_TABLE[wb] + '</div>';
+          }
+          return '<div class="hbout">' + A + ' vs ' + B + ' <span class="pend">(pending)</span></div>';
+        }).join('');
+        return '<div class="hround"><div class="hround-t">round ' + r.index + '</div>' + bouts + '</div>';
+      }).join('') + '</div>';
+    }
     if (state.pools && state.pools.length) {
       html += '<div class="history">' + state.pools.map(g => {
         const standing = poolStanding(g);
@@ -1169,7 +1494,8 @@
           else txt = A + ' vs ' + B + ' <span class="pend">(pending)</span>';
           return '<div class="hbout">' + txt + '</div>';
         }).join('');
-        return '<div class="hround"><div class="hround-t">' + (state.meta.format === 'pools' ? 'bracket round ' : 'round ') + r.index + '</div>' + bouts + '</div>';
+        const lbl = (state.meta.format === 'pools' || state.meta.format === 'magic') ? 'bracket round ' : 'round ';
+        return '<div class="hround"><div class="hround-t">' + lbl + r.index + '</div>' + bouts + '</div>';
       }).join('') + '</div>';
     }
     return html || '<p class="hint">No rounds played yet.</p>';
@@ -1250,10 +1576,132 @@
       + '<button class="btn ghost" data-action="reshuffle-pools">reshuffle pools</button>'
       + '<button class="btn ghost" data-action="open-export">export / back up</button>'
       + '<button class="btn ghost" data-action="open-import">import</button>'
+      + '<button class="btn ghost" data-action="confirm-unstart">unstart · back to setup</button>'
       + '<button class="btn danger" data-action="confirm-reset">reset tournament</button>'
       + '</div>';
     state.pools.forEach(g => { html += renderPoolCard(g); });
     html += '<div class="sticky-bar"><button class="btn primary big" style="width:100%" data-action="advance-to-bracket"' + (poolsComplete() ? '' : ' disabled') + '>to top cut &amp; bracket →</button></div>';
+    app.innerHTML = html;
+  }
+
+  // ---- magic points screens ----
+  function magicPtsChip(id) { return '<span class="lives">' + magicTotal(id) + ' pts</span>'; }
+  function renderMagicBout(p) {
+    if (p.fencerB == null) {
+      return '<div class="bout"><div class="bye-chip">🛡 <b>' + esc(nameOf(p.fencerA)) + '</b> sits out this round (bye · 0 pts)</div></div>';
+    }
+    const A = esc(nameOf(p.fencerA)), B = esc(nameOf(p.fencerB));
+    let h = '<div class="bout"><div class="bout-fencers">'
+      + '<span class="bn">' + A + ' ' + magicPtsChip(p.fencerA) + '</span>'
+      + '<span class="vs">vs</span>'
+      + '<span class="bn">' + B + ' ' + magicPtsChip(p.fencerB) + '</span>'
+      + '</div>';
+    for (let k = 0; k < MAGIC_PASSES; k++) {
+      const r = p.passes[k];
+      if (r == null) {
+        h += '<div class="mpass"><span class="pass-lbl">pass ' + (k + 1) + '</span>'
+          + '<div class="result-btns">'
+          + '<button class="btn win tiny" data-action="magic-pass" data-pid="' + p.id + '" data-k="' + k + '" data-r="A">' + A + '</button>'
+          + '<button class="btn draw tiny" data-action="magic-pass" data-pid="' + p.id + '" data-k="' + k + '" data-r="double">double</button>'
+          + '<button class="btn win tiny" data-action="magic-pass" data-pid="' + p.id + '" data-k="' + k + '" data-r="B">' + B + '</button>'
+          + '</div></div>';
+      } else {
+        const txt = r === 'double' ? '⚔ double' : ('✓ ' + esc(nameOf(passWinner(p, k))) + ' won');
+        h += '<div class="bout-summary"><span class="res">pass ' + (k + 1) + ': ' + txt + '</span>'
+          + '<button class="btn tiny ghost" data-action="magic-pass-undo" data-pid="' + p.id + '" data-k="' + k + '">undo</button></div>';
+      }
+    }
+    if (encounterComplete(p)) {
+      const wa = magicEncounterWins(p, p.fencerA), wb = magicEncounterWins(p, p.fencerB);
+      h += '<div class="bout-summary"><span class="res"><b>' + wa + '–' + wb + '</b> · ' + A + ' +' + MAGIC_TABLE[wa] + ' / ' + B + ' +' + MAGIC_TABLE[wb] + '</span></div>';
+    }
+    return h + '</div>';
+  }
+  function renderMagicStandings() {
+    const ranked = magicStanding();
+    return '<div class="standings"><div class="srow srow-head"><span class="place">#</span>'
+      + '<span class="sname">fencer</span><span class="srec">fights</span>'
+      + '<span class="srec">W-D-L</span><span class="slives">pts · avg</span></div>'
+      + ranked.map((f, i) => {
+        const rec = magicPassRecord(f.id);
+        const av = magicAvg(f.id);
+        const editing = ui.fencerEdit === f.id;
+        let row = '<div class="srow" data-action="edit-fencer" data-id="' + f.id + '">'
+          + '<span class="place">' + (i + 1) + '</span>'
+          + '<span class="sname">' + esc(displayName(f)) + '</span>'
+          + '<span class="srec">' + magicFights(f.id) + (magicByes(f.id) ? ' (+' + magicByes(f.id) + 'b)' : '') + '</span>'
+          + '<span class="srec">' + rec.w + '-' + rec.d + '-' + rec.l + '</span>'
+          + '<span class="slives"><b>' + magicTotal(f.id) + '</b> · ' + (av == null ? '—' : av.toFixed(1)) + '</span>'
+          + '</div>';
+        if (editing) row += renderDrawer(f);
+        return row;
+      }).join('') + '</div>';
+  }
+  function renderMagic() {
+    const m = state.meta;
+    const r = currentRound();
+    const roundNo = state.magicRounds.length;
+    const enc = r ? r.pairings.filter(p => p.fencerB != null) : [];
+    const done = enc.filter(encounterComplete).length;
+    const canCut = roundNo >= (m.magicRoundTarget || 5) && roundComplete(r);
+
+    let html =
+      '<div class="lv-head"><div class="title-wrap">'
+      + '<input class="lv-name" data-bind="name" value="' + esc(m.name) + '" placeholder="untitled tournament" autocapitalize="words" autocomplete="off">'
+      + '<span class="lv-sub">magic points · round ' + roundNo + ' · ' + done + '/' + enc.length + ' bouts done</span>'
+      + '</div><div class="head-btns">'
+      + '<button class="menu-btn" data-action="global-undo" aria-label="undo"' + (undoStack.length ? '' : ' disabled') + '>↶</button>'
+      + '<button class="menu-btn" data-action="toggle-menu" aria-label="menu">⋯</button>'
+      + '</div></div>';
+    if (ui.menuOpen) html += '<div class="menu">'
+      + '<button class="btn ghost" data-action="open-export">export / back up</button>'
+      + '<button class="btn ghost" data-action="open-import">import</button>'
+      + '<button class="btn ghost" data-action="confirm-unstart">unstart · back to setup</button>'
+      + '<button class="btn danger" data-action="confirm-reset">reset tournament</button>'
+      + '</div>';
+
+    html += '<div class="card"><div class="card-title"><span>round ' + roundNo + '</span>'
+      + (ui.editRound ? '' : '<button class="btn tiny ghost" data-action="edit-round">edit pairings</button>') + '</div>';
+    if (ui.editRound) html += renderEditRound();
+    else if (r) html += r.pairings.map(renderMagicBout).join('');
+    html += '</div>';
+
+    html += '<div class="card" style="margin-top:1rem"><div class="card-title">'
+      + '<button class="btn tiny ghost" data-action="toggle-standings">' + (ui.standingsOpen ? '▾ hide standings' : '▸ standings') + '</button>'
+      + '<button class="btn tiny" data-action="add-fencer-live">+ add</button></div>';
+    if (ui.standingsOpen) html += renderMagicStandings();
+    html += '</div>';
+
+    html += '<div class="card" style="margin-top:1rem"><div class="card-title">'
+      + '<button class="btn tiny ghost" data-action="toggle-history">' + (ui.historyOpen ? '▾ hide rounds' : '▸ rounds') + '</button></div>';
+    if (ui.historyOpen) html += renderHistory();
+    html += '</div>';
+
+    if (!ui.editRound) {
+      html += '<div class="sticky-bar" style="flex-direction:column;gap:.5rem">'
+        + '<button class="btn primary big" style="width:100%" data-action="advance"' + (roundComplete(r) ? '' : ' disabled') + '>next round →</button>'
+        + (canCut ? '<button class="btn big" style="width:100%" data-action="magic-to-cut">continue to top 4 →</button>' : '')
+        + '</div>';
+    }
+    app.innerHTML = html;
+  }
+  function renderMagicCut() {
+    const standing = magicStanding();
+    const optionList = sel => standing.map(f =>
+      '<option value="' + f.id + '"' + (sel === f.id ? ' selected' : '') + '>' + esc(displayName(f)) + ' · ' + magicTotal(f.id) + ' pts</option>').join('');
+    let html = '<h1 class="page-title">⚔ lock in the top 4</h1><section class="panel">'
+      + '<p class="hint">Seeds 1–4 go into the lives bracket (1 v 4, 2 v 3). Pre-filled from the standings — change any slot for a tie-break or a drop-out.</p>';
+    for (let k = 0; k < MAGIC_CUT; k++) {
+      html += '<div class="field"><span>seed ' + (k + 1) + '</span>'
+        + '<select class="text-input" data-magiccut="' + k + '"><option value="">—</option>' + optionList(ui.magicCut[k] || '') + '</select></div>';
+    }
+    if (ui.magicCutError) html += '<p class="hint" style="color:var(--out)">' + esc(ui.magicCutError) + '</p>';
+    html += '<div class="row wrap" style="margin-top:.6rem">'
+      + '<button class="btn primary" data-action="confirm-magic-cut">lock in top 4 →</button>'
+      + '<button class="btn ghost" data-action="magic-cut-cancel">cancel</button>'
+      + '</div>';
+    html += '<div class="card" style="margin-top:1rem"><div class="card-title"><span>full standings</span></div>' + renderMagicStandings() + '</div>';
+    html += '</section>';
     app.innerHTML = html;
   }
 
@@ -1279,6 +1727,7 @@
       html += '<div class="menu">'
         + '<button class="btn ghost" data-action="open-export">export / back up</button>'
         + '<button class="btn ghost" data-action="open-import">import</button>'
+        + '<button class="btn ghost" data-action="confirm-unstart">unstart · back to setup</button>'
         + '<button class="btn danger" data-action="confirm-reset">reset tournament</button>'
         + '</div>';
     }
@@ -1408,6 +1857,12 @@
     });
     html += '</div>';
     if (ui.draftError) html += '<p class="hint" style="color:var(--out)">' + esc(ui.draftError) + '</p>';
+    if (ui.draftWarn && ui.draftWarn.length) {
+      html += '<div class="warn" style="border-color:var(--gold);background:rgba(230,181,76,0.1)">'
+        + '<div>' + ui.draftWarn.map(pr => '⚠ <b>' + esc(nameOf(pr.a)) + '</b> and <b>' + esc(nameOf(pr.b)) + '</b> have already fought').join('<br>') + '</div>'
+        + '<div class="row wrap"><button class="btn tiny" data-action="draft-refresh">try fresh pairings</button></div>'
+        + '</div>';
+    }
     html += '<div class="row wrap" style="margin-top:.8rem">'
       + '<button class="btn tiny ghost" data-action="draft-add">+ add bout</button>'
       + '<button class="btn tiny ghost" data-action="draft-auto">auto-pair</button>'
@@ -1430,9 +1885,11 @@
     lines.push((state.meta.name || 'Tournament').trim());
     lines.push(new Date(state.meta.createdAt || Date.now()).toLocaleDateString() + ' · results');
     lines.push('');
+    const magic = state.meta.format === 'magic';
     finalRanking().forEach((f, i) => {
       const rk = (state.meta.format === 'pools' && f.rank && f.rank !== 'N/A') ? ' (' + f.rank + ')' : '';
-      lines.push((i + 1) + '. ' + displayName(f) + rk + '  ' + recordLabel(f.id));
+      const mp = magic ? ('  ' + magicTotal(f.id) + ' pts') : '';
+      lines.push((i + 1) + '. ' + displayName(f) + rk + '  ' + recordLabel(f.id) + mp);
     });
     return lines.join('\n');
   }
@@ -1457,13 +1914,14 @@
       banner = '<div class="champ-banner"><div class="crown">⚔</div><div class="lbl">still standing</div><div class="who">' + champs.map(f => esc(displayName(f))).join(' & ') + '</div></div>';
     }
 
+    const magic = state.meta.format === 'magic';
     let list = '<div class="card"><div class="card-title"><span>final standings</span></div><div class="standings">';
     ranked.forEach((f, i) => {
       list += '<div class="srow ' + (f.status === 'out' ? 'out' : '') + '">'
         + '<span class="place">' + (i + 1) + '</span>'
         + '<span class="sname">' + esc(displayName(f)) + (pools ? ' ' + rkTag(f.id) : '') + '</span>'
-        + '<span class="srec">' + recordLabel(f.id) + '</span>'
-        + '<span class="slives">' + heartsHTML(f) + '</span>'
+        + '<span class="srec">' + (magic ? (magicPassRecord(f.id).w + '-' + magicPassRecord(f.id).d + '-' + magicPassRecord(f.id).l) : recordLabel(f.id)) + '</span>'
+        + '<span class="slives">' + (magic ? (magicTotal(f.id) + ' pts') : heartsHTML(f)) + '</span>'
         + '</div>';
     });
     list += '</div></div>';
@@ -1534,6 +1992,20 @@
         + '<button class="btn danger" data-action="do-reset">yes, reset everything</button>'
         + '<button class="btn ghost" data-action="close-modal">cancel</button>'
         + '</div>';
+    } else if (ui.modal === 'unstart') {
+      inner = '<h2>back to setup?</h2>'
+        + '<p class="hint">This clears every round and result. Fencers, names, ranks and starting lives are kept. This cannot be undone.</p>'
+        + '<div class="modal-actions">'
+        + '<button class="btn danger" data-action="do-unstart">yes, back to setup</button>'
+        + '<button class="btn ghost" data-action="close-modal">cancel</button>'
+        + '</div>';
+    } else if (ui.modal === 'clearfencers') {
+      inner = '<h2>remove all ' + state.fencers.length + ' fencers?</h2>'
+        + '<p class="hint">Clears the whole roster. This cannot be undone.</p>'
+        + '<div class="modal-actions">'
+        + '<button class="btn danger" data-action="do-clear-fencers">yes, clear the roster</button>'
+        + '<button class="btn ghost" data-action="close-modal">cancel</button>'
+        + '</div>';
     } else if (ui.modal === 'recover') {
       inner = '<h2>save data could not be read</h2>'
         + '<p class="hint">The stored tournament data is corrupted or unreadable.</p>'
@@ -1565,6 +2037,8 @@
       case 'advance-dec': state.meta.advanceCount = Math.max(1, (state.meta.advanceCount || 1) - 1); save(); render(); break;
       case 'guarantee-inc': state.meta.guaranteePerPool = Math.max(0, (state.meta.guaranteePerPool || 0) + 1); save(); render(); break;
       case 'guarantee-dec': state.meta.guaranteePerPool = Math.max(0, (state.meta.guaranteePerPool || 0) - 1); save(); render(); break;
+      case 'magicrounds-inc': state.meta.magicRoundTarget = Math.max(1, (state.meta.magicRoundTarget || 5) + 1); save(); render(); break;
+      case 'magicrounds-dec': state.meta.magicRoundTarget = Math.max(1, (state.meta.magicRoundTarget || 5) - 1); save(); render(); break;
       case 'ranklife-inc': { state.meta.rankLives = state.meta.rankLives || {}; const k = ds.id; const cur = state.meta.rankLives[k] != null ? state.meta.rankLives[k] : state.meta.defaultLives; state.meta.rankLives[k] = Math.max(1, clampLives(cur + 1) || 1); save(); render(); break; }
       case 'ranklife-dec': { state.meta.rankLives = state.meta.rankLives || {}; const k = ds.id; const cur = state.meta.rankLives[k] != null ? state.meta.rankLives[k] : state.meta.defaultLives; state.meta.rankLives[k] = Math.max(1, clampLives(cur - 1)); save(); render(); break; }
       case 'cycle-rank': { const f = fencerById(ds.id); if (f) { const i = RANK_ORDER.indexOf(f.rank || 'N/A'); f.rank = RANK_ORDER[(i + 1) % RANK_ORDER.length]; save(); render(); } break; }
@@ -1588,6 +2062,19 @@
       case 'pool-undo-result': undoPoolResult(ds.i, ds.bid); break;
       case 'advance-to-bracket': advanceToBracket(); break;
       case 'reshuffle-pools': generatePools(); ui.menuOpen = false; save(); render(); break;
+      case 'magic-pass': {
+        const r = currentRound(); const p = r && r.pairings.find(x => x.id === ds.pid);
+        if (p && p.passes) { p.passes[parseInt(ds.k, 10)] = ds.r; save(); render(); }
+        break;
+      }
+      case 'magic-pass-undo': {
+        const r = currentRound(); const p = r && r.pairings.find(x => x.id === ds.pid);
+        if (p && p.passes) { p.passes[parseInt(ds.k, 10)] = null; save(); render(); }
+        break;
+      }
+      case 'magic-to-cut': enterMagicCut(); break;
+      case 'confirm-magic-cut': confirmMagicCut(); break;
+      case 'magic-cut-cancel': ui.magicCut = null; ui.magicCutError = null; render(); break;
       case 'edit-fencer': ui.fencerEdit = ui.fencerEdit === ds.id ? null : ds.id; render(); break;
       case 'close-fencer': ui.fencerEdit = null; render(); break;
       case 'curlife-inc': { const f = fencerById(ds.id); if (f) { setLives(ds.id, (f.currentLives || 0) + 1); render(); } break; }
@@ -1611,9 +2098,10 @@
       // edit round
       case 'edit-round': enterEditRound(); break;
       case 'draft-add': ui.draft.push({ A: '', B: '' }); render(); break;
-      case 'draft-remove': ui.draft.splice(parseInt(ds.i, 10), 1); render(); break;
+      case 'draft-remove': ui.draft.splice(parseInt(ds.i, 10), 1); refreshDraftWarn(); render(); break;
       case 'draft-auto': autoFillDraft(); break;
-      case 'draft-cancel': ui.editRound = false; ui.draft = null; ui.draftError = null; render(); break;
+      case 'draft-refresh': freshenDraft(); break;
+      case 'draft-cancel': ui.editRound = false; ui.draft = null; ui.draftError = null; ui.draftWarn = null; render(); break;
       case 'draft-save': saveEditRound(); break;
 
       // modals / menu
@@ -1621,6 +2109,10 @@
       case 'open-import': ui.modal = 'import'; ui.modalError = null; ui.menuOpen = false; render(); break;
       case 'confirm-reset': ui.modal = 'reset'; ui.menuOpen = false; render(); break;
       case 'do-reset': resetTournament(); break;
+      case 'confirm-unstart': ui.modal = 'unstart'; ui.menuOpen = false; render(); break;
+      case 'do-unstart': ui.modal = null; unstartTournament(); break;
+      case 'confirm-clear-fencers': ui.modal = 'clearfencers'; render(); break;
+      case 'do-clear-fencers': state.fencers = []; ui.modal = null; ui.fencerEdit = null; save(); render(); break;
       case 'do-copy': doCopy(); break;
       case 'do-download': doDownload(); break;
       case 'do-import': { const ta = document.getElementById('import-ta'); const err = tryImport(ta ? ta.value : ''); if (err) { ui.modalError = err; render(); } break; }
@@ -1686,6 +2178,7 @@
     else if (bind === 'numpools') { state.meta.numPools = Math.max(1, parseInt(t.value, 10) || 1); save(); }
     else if (bind === 'advance') { state.meta.advanceCount = Math.max(1, parseInt(t.value, 10) || 1); save(); }
     else if (bind === 'guarantee') { state.meta.guaranteePerPool = Math.max(0, parseInt(t.value, 10) || 0); save(); }
+    else if (bind === 'magicrounds') { state.meta.magicRoundTarget = Math.max(1, parseInt(t.value, 10) || 1); save(); }
     else if (bind === 'ranklife') { state.meta.rankLives = state.meta.rankLives || {}; state.meta.rankLives[t.dataset.id] = Math.max(1, clampLives(t.value)); save(); }
     else if (bind === 'addname') { ui.addDraft = ui.addDraft || { name: '', rank: 'N/A' }; ui.addDraft.name = t.value; }
   });
@@ -1721,8 +2214,13 @@
         // a bout left with an empty A but a filled B becomes a bye for B
         ui.draft.forEach(pr => { if (!pr.A && pr.B) { pr.A = pr.B; pr.B = null; } });
         ui.draftError = null;
+        refreshDraftWarn();
         render();
       }
+      return;
+    }
+    if (t.dataset && t.dataset.magiccut != null) {
+      if (ui.magicCut) { ui.magicCut[parseInt(t.dataset.magiccut, 10)] = t.value || ''; ui.magicCutError = null; render(); }
       return;
     }
     if (t.id === 'import-file' && t.files && t.files[0]) {
