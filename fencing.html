@@ -14,7 +14,9 @@
 <meta name="theme-color" content="#0a0612" />
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" crossorigin="anonymous" />
+<!-- non-blocking: the page renders instantly on the monospace fallback and swaps in the webfont when it arrives (important on flaky venue wifi) -->
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" crossorigin="anonymous" media="print" onload="this.media='all'" />
+<noscript><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" crossorigin="anonymous" /></noscript>
 <style>
   :root {
     --bg: #0a0612;
@@ -86,6 +88,9 @@
     text-transform: lowercase;
   }
   .top-nav .nav-right { display: flex; gap: 1.25rem; flex-wrap: wrap; justify-content: flex-end; }
+  /* installed as a PWA: hide site nav so you can't accidentally tap out of the offline app */
+  @media (display-mode: standalone) { .top-nav { display: none; } }
+  html.standalone .top-nav { display: none; }
   .top-nav a {
     color: var(--ink-dim);
     text-decoration: none;
@@ -386,6 +391,7 @@
 
   // transient UI state (not persisted)
   const ui = { menuOpen: false, standingsOpen: false, historyOpen: false, fencerEdit: null, editRound: false, draft: null, draftError: null, draftWarn: null, modal: null, poolOpen: {}, addDraft: null, magicCut: null, magicCutError: null };
+  const backupNudge = { n: 0 };   // mutations since the last export, RAM only
 
   // ---- global undo: snapshot the whole state before each mutating action ----
   const undoStack = [];
@@ -408,10 +414,11 @@
     'draft-save', 'do-reset', 'do-import', 'do-bulk', 'rematch',
     'set-format', 'apply-suggestion', 'numpools-inc', 'numpools-dec', 'advance-inc', 'advance-dec', 'cycle-rank',
     'ranklife-inc', 'ranklife-dec', 'guarantee-inc', 'guarantee-dec',
-    'pool-result', 'pool-undo-result', 'advance-to-bracket', 'reshuffle-pools',
+    'pool-result', 'pool-undo-result', 'advance-to-bracket', 'do-reshuffle-pools',
     'magicrounds-inc', 'magicrounds-dec', 'magic-pass', 'magic-pass-undo',
     'magic-bracket-pass', 'magic-bracket-pass-undo',
-    'magic-to-cut', 'confirm-magic-cut', 'do-unstart', 'do-clear-fencers'
+    'magic-to-cut', 'confirm-magic-cut', 'do-unstart', 'do-clear-fencers',
+    'do-restore-checkpoint'
   ]);
 
   // ---------------- state ----------------
@@ -474,9 +481,45 @@
       }
     } catch (_) {}
 
+    // last resort: the periodic checkpoint (an older but independent snapshot)
+    try {
+      const cp = JSON.parse(localStorage.getItem(KEY_CHECKPOINT));
+      if (cp && cp.state && cp.state.schemaVersion === SCHEMA_VERSION && Array.isArray(cp.state.fencers)) {
+        normalizeState(cp.state);
+        setTimeout(function () { showToast('Recovered from the ' + cpTime(cp.savedAt) + ' checkpoint — the main save was unreadable.', 'warn', 7000); }, 200);
+        return cp.state;
+      }
+    } catch (_) {}
+
     const hadAny = !!(localStorage.getItem(KEY) || localStorage.getItem(KEY + '.bak'));
     if (hadAny) setTimeout(function () { ui.modal = 'recover'; render(); }, 0);
     return freshState();
+  }
+
+  function cpTime(ts) {
+    const t = new Date(ts || Date.now());
+    return t.getHours().toString().padStart(2, '0') + ':' + t.getMinutes().toString().padStart(2, '0');
+  }
+  function checkpointInfo() {
+    try {
+      const cp = JSON.parse(localStorage.getItem(KEY_CHECKPOINT));
+      if (cp && cp.state && cp.state.schemaVersion === SCHEMA_VERSION && Array.isArray(cp.state.fencers)) return cp;
+    } catch (_) {}
+    return null;
+  }
+  function writeCheckpoint() {
+    if (state.meta.status !== 'live') return;
+    try { localStorage.setItem(KEY_CHECKPOINT, JSON.stringify({ savedAt: Date.now(), state: state })); } catch (_) {}
+  }
+  function restoreCheckpoint() {
+    const cp = checkpointInfo();
+    if (!cp) { showToast('No usable checkpoint found.', 'warn', 4000); ui.modal = null; render(); return; }
+    pushUndo();
+    normalizeState(cp.state);
+    state = cp.state;
+    ui.modal = null; ui.menuOpen = false; ui.editRound = false; ui.draft = null; ui.draftWarn = null; ui.magicCut = null;
+    save(); render();
+    showToast('Restored the ' + cpTime(cp.savedAt) + ' checkpoint.', 'ok', 4000);
   }
 
   // ---------------- helpers ----------------
@@ -750,10 +793,12 @@
   }
   function magicAvg(id) { const f = magicFights(id); return f ? magicTotal(id) / f : null; }
   function magicStanding() {
-    return shuffle(state.fencers.filter(f => f.status === 'alive')).sort((a, b) => {
+    return state.fencers.filter(f => f.status === 'alive').slice().sort((a, b) => {
       const pt = magicTotal(b.id) - magicTotal(a.id); if (pt) return pt;
       const av = (magicAvg(b.id) || 0) - (magicAvg(a.id) || 0); if (av) return av;
-      return magicPassRecord(b.id).w - magicPassRecord(a.id).w;
+      const pw = magicPassRecord(b.id).w - magicPassRecord(a.id).w; if (pw) return pw;
+      // deterministic final tiebreak (creation order) so tied rows don't jitter between renders
+      return (parseInt(String(a.id).slice(1), 10) || 0) - (parseInt(String(b.id).slice(1), 10) || 0);
     });
   }
 
@@ -840,8 +885,13 @@
   }
 
   function enterMagicCut() {
-    const top = magicStanding().slice(0, MAGIC_CUT).map(f => f.id);
-    while (top.length < MAGIC_CUT) top.push('');
+    const standing = magicStanding();
+    if (standing.length < MAGIC_CUT) {
+      showToast('Need ' + MAGIC_CUT + ' active fencers for the top-4 bracket — ' + standing.length + ' left. Revive someone or keep the group rounds going.', 'warn', 7000);
+      ui.menuOpen = false; render();
+      return;
+    }
+    const top = standing.slice(0, MAGIC_CUT).map(f => f.id);
     ui.magicCut = top;
     ui.magicCutError = null;
     ui.menuOpen = false;
@@ -1168,13 +1218,13 @@
     render();
   }
   function deleteFencer(id) {
+    // refund the life deltas this fencer's bouts cost their opponents, then strip the bouts
+    state.rounds.forEach(r => r.pairings.forEach(p => {
+      if ((p.fencerA === id || p.fencerB === id) && p.applied) revertResult(p);
+    }));
     state.fencers = state.fencers.filter(f => f.id !== id);
-    // strip from any pairings + revert their applied deltas
     state.rounds.concat(state.magicRounds).forEach(r => {
-      r.pairings = r.pairings.filter(p => {
-        if (p.fencerA === id || p.fencerB === id) { return false; }
-        return true;
-      });
+      r.pairings = r.pairings.filter(p => !(p.fencerA === id || p.fencerB === id));
     });
     if (ui.fencerEdit === id) ui.fencerEdit = null;
     normalizeState(state);
@@ -1342,10 +1392,12 @@
       a.href = url; a.download = 'fencing-' + nm + '-' + date + '.json';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      backupNudge.n = 0;
     } catch (e) { alert('Download failed: ' + e.message); }
   }
   function doCopy() {
     const txt = exportText();
+    backupNudge.n = 0;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(txt).then(() => flashCopy(), () => fallbackCopy(txt));
     } else fallbackCopy(txt);
@@ -1648,9 +1700,10 @@
       + '<button class="menu-btn" data-action="toggle-menu" aria-label="menu">⋯</button>'
       + '</div></div>';
     if (ui.menuOpen) html += '<div class="menu">'
-      + '<button class="btn ghost" data-action="reshuffle-pools">reshuffle pools</button>'
+      + '<button class="btn ghost" data-action="confirm-reshuffle-pools">reshuffle pools</button>'
       + '<button class="btn ghost" data-action="open-export">export / back up</button>'
       + '<button class="btn ghost" data-action="open-import">import</button>'
+      + (checkpointInfo() ? '<button class="btn ghost" data-action="confirm-restore-checkpoint">↺ restore checkpoint</button>' : '')
       + '<button class="btn ghost" data-action="confirm-unstart">unstart · back to setup</button>'
       + '<button class="btn danger" data-action="confirm-reset">reset tournament</button>'
       + '</div>';
@@ -1719,7 +1772,7 @@
     const roundNo = state.magicRounds.length;
     const enc = r ? r.pairings.filter(p => p.fencerB != null) : [];
     const done = enc.filter(encounterComplete).length;
-    const canCut = roundNo >= (m.magicRoundTarget || 5) && roundComplete(r);
+    const canCut = roundNo >= (m.magicRoundTarget || 5) && roundComplete(r) && aliveFencers().length >= MAGIC_CUT;
 
     let html =
       '<div class="lv-head"><div class="title-wrap">'
@@ -1732,6 +1785,7 @@
     if (ui.menuOpen) html += '<div class="menu">'
       + '<button class="btn ghost" data-action="open-export">export / back up</button>'
       + '<button class="btn ghost" data-action="open-import">import</button>'
+      + (checkpointInfo() ? '<button class="btn ghost" data-action="confirm-restore-checkpoint">↺ restore checkpoint</button>' : '')
       + '<button class="btn ghost" data-action="confirm-unstart">unstart · back to setup</button>'
       + '<button class="btn danger" data-action="confirm-reset">reset tournament</button>'
       + '</div>';
@@ -1833,6 +1887,7 @@
     if (ui.menuOpen) html += '<div class="menu">'
       + '<button class="btn ghost" data-action="open-export">export / back up</button>'
       + '<button class="btn ghost" data-action="open-import">import</button>'
+      + (checkpointInfo() ? '<button class="btn ghost" data-action="confirm-restore-checkpoint">↺ restore checkpoint</button>' : '')
       + '<button class="btn ghost" data-action="confirm-unstart">unstart · back to setup</button>'
       + '<button class="btn danger" data-action="confirm-reset">reset tournament</button>'
       + '</div>';
@@ -1886,6 +1941,7 @@
       html += '<div class="menu">'
         + '<button class="btn ghost" data-action="open-export">export / back up</button>'
         + '<button class="btn ghost" data-action="open-import">import</button>'
+        + (checkpointInfo() ? '<button class="btn ghost" data-action="confirm-restore-checkpoint">↺ restore checkpoint</button>' : '')
         + '<button class="btn ghost" data-action="confirm-unstart">unstart · back to setup</button>'
         + '<button class="btn danger" data-action="confirm-reset">reset tournament</button>'
         + '</div>';
@@ -2048,7 +2104,8 @@
     finalRanking().forEach((f, i) => {
       const rk = (state.meta.format === 'pools' && f.rank && f.rank !== 'N/A') ? ' (' + f.rank + ')' : '';
       const mp = magic ? ('  ' + magicTotal(f.id) + ' pts') : '';
-      lines.push((i + 1) + '. ' + displayName(f) + rk + '  ' + recordLabel(f.id) + mp);
+      const medal = ['🥇', '🥈', '🥉'][i] || (i + 1) + '.';
+      lines.push(medal + ' ' + displayName(f) + rk + '  ' + recordLabel(f.id) + mp);
     });
     return lines.join('\n');
   }
@@ -2077,7 +2134,7 @@
     let list = '<div class="card"><div class="card-title"><span>final standings</span></div><div class="standings">';
     ranked.forEach((f, i) => {
       list += '<div class="srow ' + (f.status === 'out' ? 'out' : '') + '">'
-        + '<span class="place">' + (i + 1) + '</span>'
+        + '<span class="place">' + (['🥇', '🥈', '🥉'][i] || (i + 1)) + '</span>'
         + '<span class="sname">' + esc(displayName(f)) + (pools ? ' ' + rkTag(f.id) : '') + '</span>'
         + '<span class="srec">' + (magic ? (magicPassRecord(f.id).w + '-' + magicPassRecord(f.id).d + '-' + magicPassRecord(f.id).l) : recordLabel(f.id)) + '</span>'
         + '<span class="slives">' + (magic ? (magicTotal(f.id) + ' pts') : heartsHTML(f)) + '</span>'
@@ -2165,12 +2222,31 @@
         + '<button class="btn danger" data-action="do-clear-fencers">yes, clear the roster</button>'
         + '<button class="btn ghost" data-action="close-modal">cancel</button>'
         + '</div>';
+    } else if (ui.modal === 'reshufflepools') {
+      inner = '<h2>reshuffle the pools?</h2>'
+        + '<p class="hint">Rebuilds every pool with new fencers and a fresh bout list. Every result recorded so far is cleared.</p>'
+        + '<div class="modal-actions">'
+        + '<button class="btn danger" data-action="do-reshuffle-pools">yes, reshuffle</button>'
+        + '<button class="btn ghost" data-action="close-modal">cancel</button>'
+        + '</div>';
+    } else if (ui.modal === 'restorecheckpoint') {
+      const cp = checkpointInfo();
+      inner = '<h2>restore checkpoint?</h2>'
+        + '<p class="hint">' + (cp
+            ? 'Reverts the whole tournament to the automatic checkpoint from <b>' + cpTime(cp.savedAt) + '</b>. Anything done since then is lost. (You can still ↶ undo this.)'
+            : 'No checkpoint is available yet.') + '</p>'
+        + '<div class="modal-actions">'
+        + (cp ? '<button class="btn danger" data-action="do-restore-checkpoint">yes, restore ' + cpTime(cp.savedAt) + '</button>' : '')
+        + '<button class="btn ghost" data-action="close-modal">cancel</button>'
+        + '</div>';
     } else if (ui.modal === 'recover') {
+      const cp = checkpointInfo();
       inner = '<h2>save data could not be read</h2>'
         + '<p class="hint">The stored tournament data is corrupted or unreadable.</p>'
         + (ui.modalError ? '<p class="hint" style="color:var(--out)">' + esc(ui.modalError) + '</p>' : '')
         + '<div class="modal-actions">'
         + '<button class="btn primary" data-action="recover-from-bak">restore from backup</button>'
+        + (cp ? '<button class="btn" data-action="do-restore-checkpoint">restore ' + cpTime(cp.savedAt) + ' checkpoint</button>' : '')
         + '<button class="btn" data-action="open-import">import from file</button>'
         + '<button class="btn danger" data-action="close-modal">start fresh</button>'
         + '</div>';
@@ -2220,7 +2296,8 @@
       case 'pool-result': recordPoolResult(ds.i, ds.bid, ds.r); break;
       case 'pool-undo-result': undoPoolResult(ds.i, ds.bid); break;
       case 'advance-to-bracket': advanceToBracket(); break;
-      case 'reshuffle-pools': generatePools(); ui.menuOpen = false; save(); render(); break;
+      case 'confirm-reshuffle-pools': ui.modal = 'reshufflepools'; ui.menuOpen = false; render(); break;
+      case 'do-reshuffle-pools': generatePools(); ui.modal = null; ui.menuOpen = false; save(); render(); break;
       case 'magic-pass': {
         const r = currentRound(); const p = r && r.pairings.find(x => x.id === ds.pid);
         if (p && p.passes && p.target == null) { p.passes[parseInt(ds.k, 10)] = ds.r; save(); render(); }
@@ -2280,6 +2357,8 @@
       case 'do-reset': resetTournament(); break;
       case 'confirm-unstart': ui.modal = 'unstart'; ui.menuOpen = false; render(); break;
       case 'do-unstart': ui.modal = null; unstartTournament(); break;
+      case 'confirm-restore-checkpoint': ui.modal = 'restorecheckpoint'; ui.menuOpen = false; render(); break;
+      case 'do-restore-checkpoint': restoreCheckpoint(); break;
       case 'confirm-clear-fencers': ui.modal = 'clearfencers'; render(); break;
       case 'do-clear-fencers': state.fencers = []; ui.modal = null; ui.fencerEdit = null; save(); render(); break;
       case 'do-copy': doCopy(); break;
@@ -2330,7 +2409,13 @@
     const act = btn.dataset.action;
     if (act === 'modal-bg') return;
     e.stopPropagation();
-    if (MUTATING.has(act)) pushUndo();
+    if (MUTATING.has(act)) {
+      pushUndo();
+      if (state.meta.status === 'live' && ++backupNudge.n >= 30) {
+        backupNudge.n = 0;
+        showToast('💾 back up your data — ⋯ menu → export / back up', 'warn', 6000);
+      }
+    }
     handleAction(act, btn.dataset);
   });
 
@@ -2406,27 +2491,24 @@
     if (state.meta.status === 'live') { e.preventDefault(); e.returnValue = ''; }
   });
   window.addEventListener('pagehide', function () {
-    if (state.meta.status === 'live') save();
+    if (state.meta.status === 'live') { save(); writeCheckpoint(); }
   });
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'hidden' && state.meta.status === 'live') save();
+    if (document.visibilityState === 'hidden' && state.meta.status === 'live') { save(); writeCheckpoint(); }
   });
 
-  // Periodic checkpoint every 15 minutes during active tournament
-  setInterval(function () {
-    if (state.meta.status !== 'live') return;
-    try {
-      localStorage.setItem(KEY_CHECKPOINT, JSON.stringify({ savedAt: Date.now(), state: state }));
-      const t = new Date();
-      const hhmm = t.getHours().toString().padStart(2, '0') + ':' + t.getMinutes().toString().padStart(2, '0');
-      showToast('Checkpoint saved · ' + hhmm, 'ok', 3000);
-    } catch (_) {}
-  }, CHECKPOINT_INTERVAL_MS);
+  // Silent rolling checkpoint (a "last known good" that survives an accidental reset / bad
+  // import, since those don't overwrite it). Also written on every backgrounding above —
+  // the timer only covers a phone left unlocked.
+  setInterval(writeCheckpoint, CHECKPOINT_INTERVAL_MS);
 
 })();
 </script>
 
 <script>
+  // iOS <16.4 reports standalone only via navigator.standalone (no display-mode media query)
+  if (window.navigator && window.navigator.standalone === true) document.documentElement.classList.add('standalone');
+
   // Register the service worker so the tool works offline once visited
   // (and is installable to the iPhone home screen via Share → Add to Home Screen).
   if ('serviceWorker' in navigator) {
